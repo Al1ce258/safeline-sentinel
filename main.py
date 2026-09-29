@@ -164,7 +164,7 @@ def _process_records(records: list[dict], dry_run: bool) -> dict[str, int]:
             continue
         if label == "unknown":
             logger.info("AI 研判 JSON：%s", json.dumps(result, ensure_ascii=False))
-        blocked = _block_unknown(record, result, dry_run) if label == "unknown" else True
+        blocked = _block_unknown(record, result, dry_run) if label == "unknown" else False
         write_report(record, result, blocked)
     logger.info(
         "分类结果：clean=%d, malicious=%d, unknown=%d",
