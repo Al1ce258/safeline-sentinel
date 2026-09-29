@@ -45,6 +45,7 @@ def test_fetch_attack_records_uses_seconds_and_token(monkeypatch) -> None:
     assert method == "GET"
     assert url.endswith("/api/open/records")
     assert kwargs["headers"] == {"X-SLCE-API-TOKEN": "test-token"}
+    assert kwargs["proxies"] == {"http": "", "https": ""}
     assert kwargs["timeout"] == 30
     params = kwargs["params"]
     assert isinstance(params["start"], int)

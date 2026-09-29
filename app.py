@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -62,6 +63,13 @@ async def _http_exception_handler(_: Request, exc: HTTPException) -> JSONRespons
 async def _validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
     """将请求参数校验失败转换为统一 JSON。"""
     return _error(str(exc.errors()), code=422, status_code=422)
+
+
+@app.exception_handler(requests.RequestException)
+async def _upstream_exception_handler(_: Request, exc: requests.RequestException) -> JSONResponse:
+    """将上游连接失败转换为统一错误响应。"""
+    logger.warning("上游服务请求失败：%s", exc)
+    return _error("雷池服务连接失败，请检查服务地址和网络配置", code=502, status_code=502)
 
 
 @app.exception_handler(Exception)

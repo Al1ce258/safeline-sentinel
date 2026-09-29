@@ -20,6 +20,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 30
 MAX_PAGE_SIZE = 100
+NO_PROXY = {"http": "", "https": ""}
 DEFAULT_LOOKBACK_HOURS = 24
 
 
@@ -58,6 +59,7 @@ def _request_json(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         _endpoint(path),
         headers=_headers(),
         timeout=REQUEST_TIMEOUT,
+        proxies=NO_PROXY,
         verify=False,
         **kwargs,
     )

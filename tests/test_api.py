@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import requests
 from fastapi.testclient import TestClient
 
 import app
@@ -55,6 +56,24 @@ def test_records_api_uses_fetch_arguments(monkeypatch, client: TestClient) -> No
     assert body["code"] == 0
     assert body["data"]["records"][0]["event_id"] == "clean"
     assert calls == [(20, 6, 2, 20)]
+
+
+def test_records_api_returns_unified_upstream_error(monkeypatch, client: TestClient) -> None:
+    """雷池不可达时刷新接口应返回明确统一错误。"""
+    def fake_fetch(**kwargs: object) -> list[dict]:
+        """模拟雷池连接失败。"""
+        raise requests.ConnectionError("upstream unavailable")
+
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+
+    response = client.get("/api/records")
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "code": 502,
+        "message": "雷池服务连接失败，请检查服务地址和网络配置",
+        "data": None,
+    }
 
 
 def test_classify_api_returns_counts_and_details(monkeypatch, client: TestClient) -> None:
