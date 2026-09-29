@@ -10,6 +10,47 @@ python main.py --limit 100
 
 `--dry-run` 使用固定样本，不访问雷池或大模型，也不等待人工输入。正式运行前按 `.env.example` 配置 `.env`。
 
+## Web GUI
+
+### 启动方式
+
+```bash
+python main.py --web
+python main.py --web --host 127.0.0.1 --port 8000
+```
+
+默认访问地址为 `http://127.0.0.1:8000`。Web GUI 只调用后端 `/api/` 接口，雷池 Token 和大模型密钥不会发送到浏览器。
+
+### 页面功能
+
+1. **攻击日志**：展示 `src_ip`、`host`、`url_path`、`risk_level`、`action`、`rule_id`、`created_at`。
+2. **分类统计**：展示 clean、malicious、unknown 三种规则分类数量。
+3. **AI 研判**：对 unknown 记录调用后端和既有大模型模块，展示固定 JSON 结果。
+4. **黑名单**：高危结果提供写入按钮，人工确认后调用后端追加 IP。
+5. **报告**：列出 `reports/` 下的 Markdown 文件并查看内容。
+
+### API 列表
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| GET | `/api/records` | 按 `hours`、`page`、`page_size` 拉取攻击日志 |
+| GET | `/api/classify` | 返回三类计数和分类明细 |
+| POST | `/api/analyze` | 对 unknown 记录调用 AI 研判 |
+| POST | `/api/block` | 写入雷池黑名单 IP 组 |
+| GET | `/api/reports` | 列出 Markdown 报告 |
+| GET | `/api/reports/{filename}` | 读取指定报告内容 |
+
+所有 API 响应结构统一为 `{code, message, data}`。
+
+### 演示流程
+
+1. 配置 `.env`，启动雷池和 DVWA。
+2. 运行 `python main.py --web` 并打开控制台。
+3. 刷新攻击日志，对比雷池已阻断和已放行记录。
+4. 对 unknown 记录点击「AI 研判」，查看结构化证据和处置建议。
+5. 对高危结果点击「写入黑名单」，确认后完成追加。
+6. 在报告区查看本次闭环生成的 Markdown 报告。
+
 ---
 
 ## 0. 给 AI 编码助手的指令
@@ -18,7 +59,7 @@ python main.py --limit 100
 
 要求：
 
-1. 使用 Python 3.10+，依赖 `requests`、`python-dotenv`。
+1. 使用 Python 3.10+，依赖 `requests`、`python-dotenv`、`fastapi`、`uvicorn`、`jinja2`。
 2. 通过雷池 Open API 拉取攻击日志。
 3. 实现规则预分类：`clean` / `malicious` / `unknown`。
 4. 只把 `unknown` 的灰地带请求交给大模型研判。
@@ -95,6 +136,8 @@ python main.py --limit 100
 | Python 3.10+                   | AI Agent 主程序               |
 | requests                       | 调用雷池 API 和大模型 API     |
 | DeepSeek API / 兼容 OpenAI API | 大模型研判                    |
+| FastAPI / Uvicorn              | Web API 与本地服务            |
+| Jinja2 / 原生 HTML/CSS/JS      | Web GUI 页面与交互            |
 | Markdown                       | 报告输出                      |
 
 ---
