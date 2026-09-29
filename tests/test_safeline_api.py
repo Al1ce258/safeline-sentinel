@@ -55,6 +55,32 @@ def test_fetch_attack_records_uses_seconds_and_token(monkeypatch) -> None:
     assert params["page_size"] == 1
 
 
+def test_fetch_attack_records_falls_back_to_milliseconds(monkeypatch) -> None:
+    """秒级参数为空时应用毫秒参数重试以兼容雷池实现。"""
+    import safeline_api as api
+
+    calls = []
+    responses = iter(
+        [
+            FakeResponse({"data": {"data": [], "total": 0}, "err": None}),
+            FakeResponse({"data": {"data": [{"event_id": "one"}], "total": 1}, "err": None}),
+        ]
+    )
+
+    def fake_request(method, url, **kwargs):
+        """记录两次请求并返回预设响应。"""
+        calls.append(kwargs["params"])
+        return next(responses)
+
+    monkeypatch.setattr(api, "SAFELINE_BASE_URL", "https://waf.example.test")
+    monkeypatch.setattr(api, "SAFELINE_API_TOKEN", "test-token")
+    monkeypatch.setattr(api.requests, "request", fake_request)
+
+    assert fetch_attack_records(limit=1) == [{"event_id": "one"}]
+    assert calls[1]["start"] == calls[0]["start"] * 1000
+    assert calls[1]["end"] == calls[0]["end"] * 1000
+
+
 def test_add_ip_to_blacklist_uses_append_endpoint(monkeypatch) -> None:
     """追加黑名单必须使用 append 接口和正确请求体。"""
     import safeline_api as api

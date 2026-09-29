@@ -20,8 +20,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 30
 MAX_PAGE_SIZE = 100
-NO_PROXY = {"http": "", "https": ""}
 DEFAULT_LOOKBACK_HOURS = 24
+NO_PROXY = {"http": "", "https": ""}
 
 
 def _headers() -> dict[str, str]:
@@ -83,6 +83,27 @@ def _extract_records(payload: dict[str, Any]) -> list[dict]:
     return records
 
 
+def _fetch_records_page(start: int, end: int, page: int, size: int) -> tuple[dict, list[dict]]:
+    """拉取单页记录，并兼容雷池毫秒时间参数实现。"""
+    payload = _request_json(
+        "GET",
+        "/api/open/records",
+        params={"start": start, "end": end, "page": page, "page_size": size},
+    )
+    batch = _extract_records(payload)
+    data = payload.get("data")
+    total = data.get("total") if isinstance(data, dict) else None
+    if batch or total not in (0, None):
+        return payload, batch
+    # 部分雷池版本实际按毫秒过滤，但返回的 created_at 仍是秒级。
+    payload = _request_json(
+        "GET",
+        "/api/open/records",
+        params={"start": start * 1000, "end": end * 1000, "page": page, "page_size": size},
+    )
+    return payload, _extract_records(payload)
+
+
 def fetch_attack_records(
     limit: int = 100,
     hours: int = DEFAULT_LOOKBACK_HOURS,
@@ -110,27 +131,13 @@ def fetch_attack_records(
     start = now - hours * 60 * 60
     if page_size is not None:
         size = min(max(page_size, 1), MAX_PAGE_SIZE)
-        payload = _request_json(
-            "GET",
-            "/api/open/records",
-            params={"start": start, "end": now, "page": page, "page_size": size},
-        )
-        return _extract_records(payload)[: min(limit, size)]
+        _, batch = _fetch_records_page(start, now, page, size)
+        return batch[: min(limit, size)]
     records: list[dict] = []
     current_page = page
     while len(records) < limit:
         current_size = min(MAX_PAGE_SIZE, limit - len(records))
-        payload = _request_json(
-            "GET",
-            "/api/open/records",
-            params={
-                "start": start,
-                "end": now,
-                "page": current_page,
-                "page_size": current_size,
-            },
-        )
-        batch = _extract_records(payload)
+        payload, batch = _fetch_records_page(start, now, current_page, current_size)
         records.extend(batch)
         data = payload.get("data")
         total = data.get("total") if isinstance(data, dict) else None
