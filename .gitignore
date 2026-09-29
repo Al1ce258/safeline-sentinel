@@ -3,3 +3,5 @@ reports/
 __pycache__/
 *.pyc
 .pytest_cache/
+.vscode/
+test.py

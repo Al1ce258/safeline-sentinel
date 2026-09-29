@@ -1,5 +1,7 @@
 # AGENT.md — 雷池哨兵（SafeLine Sentinel）AI 编码助手工作规范
 
+
+
 > 本文件是给 AI 编码助手（Cursor / Claude Code / Codex / DeepSeek 等）的**唯一权威指令**。
 > 每次开始编码前，AI 必须先完整阅读本文件。
 > 本文件优先级高于任何单次对话指令。如果对话指令与本文件冲突，AI 必须指出冲突并请求确认。
@@ -195,6 +197,111 @@ def write_report(record: dict, result: dict, blocked: bool) -> str:
 def main() -> None:
     """主流程：拉日志 → 分类 → 研判 → 人工确认 → 写回 → 报告。"""
 ```
+
+### 5.7 雷池 Open API 接口契约（已实测）
+
+以下信息来自雷池 Open API 的 `doc.json` 和本地实测，是 `safeline_api.py` 必须遵守的硬约定。
+
+#### 5.7.1 认证方式
+
+- 请求头：`X-SLCE-API-TOKEN: <token>`
+- **不是** `Authorization: Bearer`。
+- Token 从雷池控制台「系统设置 → API Token」获取，写入 `.env` 的 `SAFELINE_API_TOKEN`。
+- base URL 形如 `https://192.168.161.130:9443`，写入 `.env` 的 `SAFELINE_BASE_URL`。
+- 由于使用自签名证书，本地请求需 `verify=False`，并在模块开头 `urllib3.disable_warnings(...)`。
+
+#### 5.7.2 拉取攻击日志
+
+- 方法：`GET`
+- 路径：`/api/open/records`
+- Query 参数：
+
+| 参数          | 类型    | 说明                 |
+| ------------- | ------- | -------------------- |
+| `start`       | integer | 开始时间戳，**秒级** |
+| `end`         | integer | 结束时间戳，**秒级** |
+| `page`        | integer | 页码，从 1 开始      |
+| `page_size`   | integer | 每页条数，最大 100   |
+| `ip`          | string  | 可选，按来源 IP 过滤 |
+| `host`        | string  | 可选，按域名过滤     |
+| `url`         | string  | 可选，按 URL 过滤    |
+| `attack_type` | string  | 可选，按攻击类型过滤 |
+
+- 返回结构：`{"data": {"data": [...], "total": N}, "err": null, "msg": ""}`
+- 关键字段（每条记录）：
+
+| 字段          | 类型    | 含义                       |
+| ------------- | ------- | -------------------------- |
+| `src_ip`      | string  | 攻击来源 IP                |
+| `host`        | string  | 被攻击域名                 |
+| `url_path`    | string  | 完整请求路径（含 query）   |
+| `method`      | string  | HTTP 方法                  |
+| `risk_level`  | integer | 风险等级，3 为高危         |
+| `action`      | integer | **1 = 阻断，0 = 放行**     |
+| `rule_id`     | string  | 命中的规则 ID，如 `m_sqli` |
+| `module`      | string  | 检测模块，如 `m_sqli`      |
+| `attack_type` | integer | 攻击类型编号               |
+| `created_at`  | integer | **秒级**时间戳             |
+| `event_id`    | string  | 事件唯一 ID                |
+| `payload`     | string  | 命中的 payload（可能为空） |
+| `req_body`    | string  | 请求体                     |
+| `req_header`  | string  | 请求头                     |
+
+- **注意**：`created_at` 是秒级时间戳，不是毫秒。
+
+#### 5.7.3 获取 IP 组列表
+
+- 方法：`GET`
+- 路径：`/api/open/ipgroup`
+- 返回结构：`{"data": {"nodes": [...], "total": N}}`
+- 每个 IP 组字段：`id`、`comment`、`ips`、`builtin`、`total`
+
+#### 5.7.4 创建 IP 组
+
+- 方法：`POST`
+- 路径：`/api/open/ipgroup`
+- 请求体：`{"comment": "组名", "ips": []}`
+- 返回结构：`{"data": <新组ID>, "err": null}`
+
+#### 5.7.5 向 IP 组追加 IP
+
+- 方法：`POST`
+- 路径：`/api/open/ipgroup/append`
+- 请求体：`{"ip_group_ids": [<组ID>], "ips": ["<IP>"]}`
+- 返回结构：`{"err": null}`
+- **不要用** `PUT /api/open/ipgroup`，那是整体替换，不是追加。
+
+#### 5.7.6 错误处理约定
+
+- 所有响应先判断 `err` 字段，非空则抛出 `RuntimeError`。
+- 所有请求必须带 `timeout=30`。
+- 所有请求必须 `raise_for_status()`。
+- 解析失败时不得崩溃，记录原始响应后跳过该条。
+
+#### 5.7.7 实测样例
+
+一条真实的攻击日志记录：
+
+```json
+{
+  "src_ip": "192.168.161.1",
+  "host": "192.168.161.130",
+  "url_path": "/vulnerabilities/sqli/?id=1&Submit=Submit&id=%27%20&&%20extractvalue(1,concat(0x7e,version()))--",
+  "risk_level": 3,
+  "action": 1,
+  "rule_id": "m_sqli",
+  "module": "m_sqli",
+  "attack_type": 0,
+  "created_at": 1790649380,
+  "event_id": "c4349e7ee09c4d30ac7798e616c346cc"
+}
+```
+
+#### 5.7.8 与演示流程的关系
+
+- `action = 1`：雷池已拦截。AI Agent 对这类做二次研判，用于验证判断一致性。
+- `action = 0`：雷池放行。**这是 AI Agent 的核心目标**，灰地带，需要 AI 判断是否为漏网攻击。
+- 演示时必须同时展示两类记录，形成“雷池拦了什么、漏了什么、AI 补了什么”的对比。
 
 ---
 
