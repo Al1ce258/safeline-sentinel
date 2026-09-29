@@ -15,6 +15,8 @@ SAFELINE_API_TOKEN = os.getenv("SAFELINE_API_TOKEN", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_API_URL = os.getenv("LLM_API_URL", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
+WEB_HOST = os.getenv("WEB_HOST", "127.0.0.1")
+WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
 BLACKLIST_GROUP = os.getenv("BLACKLIST_GROUP", "ai-agent-blacklist")
 
 

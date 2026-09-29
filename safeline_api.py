@@ -20,7 +20,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 30
 MAX_PAGE_SIZE = 100
-ATTACK_LOOKBACK_SECONDS = 24 * 60 * 60
+DEFAULT_LOOKBACK_HOURS = 24
 
 
 def _headers() -> dict[str, str]:
@@ -65,60 +65,83 @@ def _request_json(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
     return _check_payload(response)
 
 
-def fetch_attack_records(limit: int = 100) -> list[dict]:
-    """拉取最近 24 小时的雷池攻击记录。
+def _extract_records(payload: dict[str, Any]) -> list[dict]:
+    """从雷池响应中安全提取攻击记录列表。"""
+    data = payload.get("data")
+    batch = data.get("data", []) if isinstance(data, dict) else []
+    if not isinstance(batch, list):
+        logger.warning("雷池攻击记录列表结构无效，已跳过")
+        return []
+    records = []
+    for item in batch:
+        if isinstance(item, dict):
+            records.append(item)
+        else:
+            logger.warning("跳过结构无效的攻击记录：%r", item)
+    return records
+
+
+def fetch_attack_records(
+    limit: int = 100,
+    hours: int = DEFAULT_LOOKBACK_HOURS,
+    page: int = 1,
+    page_size: int | None = None,
+) -> list[dict]:
+    """拉取雷池攻击记录。
 
     参数：
-        limit: 最多返回多少条记录。
+        limit: 最多返回的记录数。
+        hours: 回溯小时数，Web API 使用。
+        page: 页码，从 1 开始。
+        page_size: 单页条数；传入时只请求指定页。
     返回：
         攻击记录列表。
     异常：
-        ValueError: 配置无效或 limit 非法。
+        ValueError: 配置或分页参数无效。
         requests.RequestException: 网络请求失败。
         RuntimeError: 雷池返回错误或响应结构无效。
     """
-    if limit <= 0:
+    if limit <= 0 or hours <= 0 or page <= 0:
         return []
     validate_safeline_config()
     now = int(time.time())
-    page = 1
+    start = now - hours * 60 * 60
+    if page_size is not None:
+        size = min(max(page_size, 1), MAX_PAGE_SIZE)
+        payload = _request_json(
+            "GET",
+            "/api/open/records",
+            params={"start": start, "end": now, "page": page, "page_size": size},
+        )
+        return _extract_records(payload)[: min(limit, size)]
     records: list[dict] = []
+    current_page = page
     while len(records) < limit:
-        page_size = min(MAX_PAGE_SIZE, limit - len(records))
+        current_size = min(MAX_PAGE_SIZE, limit - len(records))
         payload = _request_json(
             "GET",
             "/api/open/records",
             params={
-                "start": now - ATTACK_LOOKBACK_SECONDS,
+                "start": start,
                 "end": now,
-                "page": page,
-                "page_size": page_size,
+                "page": current_page,
+                "page_size": current_size,
             },
         )
+        batch = _extract_records(payload)
+        records.extend(batch)
         data = payload.get("data")
-        if not isinstance(data, dict):
-            logger.warning("雷池攻击记录 data 字段不是对象，已停止拉取")
-            break
-        batch = data.get("data", [])
-        if not isinstance(batch, list):
-            logger.warning("雷池攻击记录列表结构无效，已停止拉取")
-            break
-        for item in batch:
-            if isinstance(item, dict):
-                records.append(item)
-            else:
-                logger.warning("跳过结构无效的攻击记录：%r", item)
-        total = data.get("total")
-        if not batch or len(batch) < page_size:
+        total = data.get("total") if isinstance(data, dict) else None
+        if not batch or len(batch) < current_size:
             break
         if isinstance(total, int) and len(records) >= total:
             break
-        page += 1
+        current_page += 1
     return records[:limit]
 
 
-def _get_blacklist_group_id() -> int:
-    """获取黑名单组 ID，不存在时创建。"""
+def get_or_create_blacklist_group() -> int:
+    """获取雷池黑名单组 ID，不存在时创建。"""
     payload = _request_json("GET", "/api/open/ipgroup")
     data = payload.get("data")
     nodes = data.get("nodes", []) if isinstance(data, dict) else []
@@ -139,11 +162,12 @@ def _get_blacklist_group_id() -> int:
     return group_id
 
 
-def add_ip_to_blacklist(ip: str) -> bool:
+def add_ip_to_blacklist(ip: str, group_id: int | None = None) -> bool:
     """将 IP 追加到雷池黑名单组。
 
     参数：
         ip: 待追加的 IPv4 或 IPv6 地址。
+        group_id: 可选目标组 ID；不传时自动查询或创建。
     返回：
         雷池确认追加成功时返回 True。
     异常：
@@ -153,11 +177,11 @@ def add_ip_to_blacklist(ip: str) -> bool:
     """
     validate_safeline_config()
     normalized_ip = str(ipaddress.ip_address(ip))
-    group_id = _get_blacklist_group_id()
+    target_group_id = group_id or get_or_create_blacklist_group()
     _request_json(
         "POST",
         "/api/open/ipgroup/append",
-        json={"ip_group_ids": [group_id], "ips": [normalized_ip]},
+        json={"ip_group_ids": [target_group_id], "ips": [normalized_ip]},
     )
     logger.info("已请求雷池追加黑名单 IP：%s", normalized_ip)
     return True
