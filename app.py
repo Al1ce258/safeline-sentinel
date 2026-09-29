@@ -157,8 +157,8 @@ def classify_records(
     return _ok(_classify_records(records))
 
 
-@app.post("/api/analyze")
-def analyze_record(payload: AnalyzeRequest) -> dict[str, Any]:
+@app.post("/api/analyze", response_model=None)
+def analyze_record(payload: AnalyzeRequest) -> dict[str, Any] | JSONResponse:
     """调用既有大模型模块研判 unknown 记录。"""
     if classifier.classify(payload.record) != "unknown":
         return _error("仅允许研判 unknown 记录")
