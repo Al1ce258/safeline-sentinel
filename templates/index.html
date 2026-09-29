@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>雷池哨兵控制台</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+    <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">SAFELINE SENTINEL</p>
+            <h1>雷池哨兵控制台</h1>
+        </div>
+        <div class="toolbar">
+            <label>
+                时间范围
+                <select id="hours">
+                    <option value="1">最近 1 小时</option>
+                    <option value="6">最近 6 小时</option>
+                    <option value="24" selected>最近 24 小时</option>
+                    <option value="168">最近 7 天</option>
+                </select>
+            </label>
+            <label>
+                每页条数
+                <select id="page-size">
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                </select>
+            </label>
+            <button id="refresh-button" class="button primary" type="button">刷新数据</button>
+        </div>
+    </header>
+
+    <main class="layout">
+        <p id="global-status" class="status" role="status"></p>
+
+        <section class="panel wide" aria-labelledby="logs-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">01 / ATTACK LOGS</p>
+                    <h2 id="logs-title">攻击日志</h2>
+                </div>
+                <span id="record-count" class="count-badge">0 条</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>来源 IP</th>
+                            <th>域名</th>
+                            <th>请求路径</th>
+                            <th>风险等级</th>
+                            <th>动作</th>
+                            <th>规则 ID</th>
+                            <th>时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="records-body">
+                        <tr><td colspan="8" class="empty">暂无记录</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="stats-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">02 / CLASSIFICATION</p>
+                    <h2 id="stats-title">分类统计</h2>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <article class="stat-card clean">
+                    <span>clean</span>
+                    <strong id="clean-count">0</strong>
+                </article>
+                <article class="stat-card malicious">
+                    <span>malicious</span>
+                    <strong id="malicious-count">0</strong>
+                </article>
+                <article class="stat-card unknown">
+                    <span>unknown</span>
+                    <strong id="unknown-count">0</strong>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="analysis-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">03 / AI ANALYSIS</p>
+                    <h2 id="analysis-title">AI 研判</h2>
+                </div>
+            </div>
+            <div id="analysis-result" class="analysis-result">
+                <p class="empty">选择 unknown 日志开始研判</p>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="blacklist-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">04 / BLACKLIST</p>
+                    <h2 id="blacklist-title">黑名单</h2>
+                </div>
+            </div>
+            <form id="block-form" class="inline-form">
+                <label class="sr-only" for="block-ip">IP 地址</label>
+                <input id="block-ip" type="text" placeholder="IP 地址" required>
+                <button class="button danger" type="submit">写入黑名单</button>
+            </form>
+            <div id="blacklist-result" class="compact-list">
+                <p class="empty">暂无处置记录</p>
+            </div>
+        </section>
+
+        <section class="panel wide" aria-labelledby="reports-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">05 / REPORTS</p>
+                    <h2 id="reports-title">报告</h2>
+                </div>
+                <span id="report-count" class="count-badge">0 份</span>
+            </div>
+            <div class="reports-layout">
+                <div id="reports-list" class="report-list">
+                    <p class="empty">暂无报告</p>
+                </div>
+                <article id="report-viewer" class="report-viewer">
+                    <p class="empty">选择报告查看内容</p>
+                </article>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
