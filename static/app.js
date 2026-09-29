@@ -199,6 +199,11 @@ async function blockIp(ip) {
         setStatus("缺少来源 IP，无法写入黑名单", true);
         return;
     }
+    const confirmed = window.confirm(`确认将 ${ip} 写入雷池黑名单？`);
+    if (!confirmed) {
+        setStatus("已取消黑名单写入");
+        return;
+    }
     setStatus(`正在写入黑名单：${ip}`);
     try {
         const result = await api("/api/block", {
