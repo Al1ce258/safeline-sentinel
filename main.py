@@ -6,7 +6,7 @@ import logging
 
 from ai_analyzer import analyze_unknown
 from classifier import classify
-from config import validate_safeline_config
+from config import WEB_HOST, WEB_PORT, validate_safeline_config
 from logger import configure_logging
 from report import write_report
 from safeline_api import add_ip_to_blacklist, fetch_attack_records
@@ -80,7 +80,11 @@ DRY_RUN_RECORDS = [
 def _parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="雷池哨兵 AI 审计增强 MVP")
-    parser.add_argument("--dry-run", action="store_true", help="使用固定样本，不发起网络请求")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--web", action="store_true", help="启动 FastAPI Web GUI")
+    mode.add_argument("--dry-run", action="store_true", help="使用固定样本，不发起网络请求")
+    parser.add_argument("--host", default=WEB_HOST, help="Web 监听地址")
+    parser.add_argument("--port", type=int, default=WEB_PORT, help="Web 监听端口")
     parser.add_argument("--limit", type=int, default=100, help="最多处理多少条雷池记录")
     return parser.parse_args()
 
@@ -175,10 +179,20 @@ def _process_records(records: list[dict], dry_run: bool) -> dict[str, int]:
     return counts
 
 
+def _run_web(host: str, port: int) -> None:
+    """启动 FastAPI Web 服务。"""
+    import uvicorn
+
+    uvicorn.run("app:app", host=host, port=port)
+
+
 def main() -> None:
     """主流程：拉日志 → 分类 → 研判 → 人工确认 → 写回 → 报告。"""
     args = _parse_args()
     configure_logging()
+    if args.web:
+        _run_web(args.host, args.port)
+        return
     if args.dry_run:
         logger.info("dry-run 模式：使用固定样本，不访问雷池或大模型")
         records = _dry_run_records()
