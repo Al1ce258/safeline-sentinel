@@ -65,6 +65,13 @@ async def _validation_exception_handler(_: Request, exc: RequestValidationError)
     return _error(str(exc.errors()), code=422, status_code=422)
 
 
+@app.exception_handler(ai_analyzer.LLMRequestError)
+async def _llm_exception_handler(_: Request, exc: ai_analyzer.LLMRequestError) -> JSONResponse:
+    """将大模型连接失败转换为统一错误响应。"""
+    logger.warning("大模型请求失败：%s", exc)
+    return _error("大模型服务连接失败，请检查 LLM_API_URL 和网络配置", code=502, status_code=502)
+
+
 @app.exception_handler(requests.RequestException)
 async def _upstream_exception_handler(_: Request, exc: requests.RequestException) -> JSONResponse:
     """将上游连接失败转换为统一错误响应。"""

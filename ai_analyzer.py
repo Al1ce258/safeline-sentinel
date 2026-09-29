@@ -10,13 +10,22 @@ from config import (
     LLM_API_KEY,
     LLM_API_URL,
     LLM_MODEL,
+    LLM_PROXY,
+    LLM_VERIFY_SSL,
     validate_llm_config,
 )
 
 logger = logging.getLogger(__name__)
+NO_PROXY = {"http": "", "https": ""}
 REQUEST_TIMEOUT = 30
 REQUIRED_KEYS = ("危险等级", "攻击类型", "证据", "建议", "建议规则")
 ALLOWED_RISK_LEVELS = {"高", "中", "低"}
+
+
+class LLMRequestError(RuntimeError):
+    """大模型服务连接或 HTTP 请求失败。"""
+
+
 RECORD_FIELDS = (
     "src_ip",
     "host",
@@ -30,6 +39,13 @@ RECORD_FIELDS = (
     "payload",
     "req_body",
 )
+
+
+def _proxy_settings() -> dict[str, str]:
+    """返回大模型代理配置，空配置时绕过环境代理。"""
+    if LLM_PROXY:
+        return {"http": LLM_PROXY, "https": LLM_PROXY}
+    return NO_PROXY
 
 
 def _record_summary(record: dict) -> dict[str, Any]:
@@ -94,24 +110,30 @@ def analyze_unknown(record: dict) -> dict:
         固定结构的研判字典。
     异常：
         ValueError: 配置缺失或模型输出不符合契约。
-        requests.RequestException: 大模型请求失败。
+        LLMRequestError: 大模型服务连接或 HTTP 请求失败。
     """
     validate_llm_config()
-    response = requests.post(
-        LLM_API_URL,
-        headers={
-            "Authorization": f"Bearer {LLM_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": LLM_MODEL,
-            "messages": [{"role": "user", "content": _build_prompt(record)}],
-            "temperature": 0.2,
-            "response_format": {"type": "json_object"},
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            LLM_API_URL,
+            headers={
+                "Authorization": f"Bearer {LLM_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": LLM_MODEL,
+                "messages": [{"role": "user", "content": _build_prompt(record)}],
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=REQUEST_TIMEOUT,
+            proxies=_proxy_settings(),
+            verify=LLM_VERIFY_SSL,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("大模型请求失败：%s", exc)
+        raise LLMRequestError("大模型请求失败") from exc
     try:
         content = response.json()["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError, ValueError) as exc:

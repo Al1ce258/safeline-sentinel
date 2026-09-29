@@ -113,6 +113,24 @@ def test_analyze_api_calls_mock_model(monkeypatch, client: TestClient) -> None:
     assert response.json()["data"] == expected
 
 
+def test_analyze_api_returns_unified_llm_error(monkeypatch, client: TestClient) -> None:
+    """大模型不可达时应返回准确的统一错误。"""
+    def fake_analyze(record: dict) -> dict:
+        """模拟大模型连接失败。"""
+        raise app.ai_analyzer.LLMRequestError("llm unavailable")
+
+    monkeypatch.setattr(app.ai_analyzer, "analyze_unknown", fake_analyze)
+
+    response = client.post("/api/analyze", json={"record": _records()[2]})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "code": 502,
+        "message": "大模型服务连接失败，请检查 LLM_API_URL 和网络配置",
+        "data": None,
+    }
+
+
 def test_analyze_api_rejects_non_unknown(client: TestClient) -> None:
     """AI 研判 API 应拒绝非 unknown 记录。"""
     response = client.post("/api/analyze", json={"record": _records()[0]})
