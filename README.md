@@ -1,6 +1,14 @@
 # 雷池 WAF + AI Agent 审计增强项目 README
 
-> 本文档用于 Vibe Coding：把这份 README 直接交给 AI 编码助手，即可生成项目骨架、核心函数和接口调用逻辑。
+> 本仓库已完成雷池哨兵 MVP；接口契约以 AGENT.md 第 5.7 节和实际代码为准。
+
+```bash
+python -m pytest tests/ -v
+python main.py --dry-run
+python main.py --limit 100
+```
+
+`--dry-run` 使用固定样本，不访问雷池或大模型，也不等待人工输入。正式运行前按 `.env.example` 配置 `.env`。
 
 ---
 
@@ -62,13 +70,13 @@
 雷池日志（Luigi）通过 Open API 暴露
    ↓
 你的 AI Agent
-   ├─ 拉取日志：GET /api/open/records/acl
+   ├─ 拉取日志：GET /api/open/records
    ├─ 规则预分类：clean / malicious / unknown
    ├─ unknown → 调用大模型研判
    ├─ 大模型输出固定 JSON
    ├─ 程序解析 JSON，自行判断危险等级
    ├─ 高危 → 人工确认 y/n
-   ├─ 确认后：PUT /api/open/ipgroup 写入黑名单
+   ├─ 确认后：POST /api/open/ipgroup/append 追加黑名单 IP
    └─ 生成 Markdown 报告
    ↓
 雷池黑名单生效，后续请求被拦截
@@ -198,8 +206,9 @@ openssl req -x509 -newkey rsa:2048 -keyout dvwa.key -out dvwa.crt -days 365 -nod
 
 雷池 Open API：
 
-- `GET /api/open/records/acl`：拉取攻击记录。
-- `PUT /api/open/ipgroup`：写入 IP 黑名单组。
+- `GET /api/open/records`：按秒级 `start`、`end` 时间戳和分页参数拉取攻击记录。
+- `GET /api/open/ipgroup`：查询 IP 组；不存在时用 `POST /api/open/ipgroup` 创建。
+- `POST /api/open/ipgroup/append`：向已有 IP 组追加黑名单 IP。
 
 需要在雷池控制台创建 API Token，放入 `.env`。
 
@@ -241,7 +250,7 @@ Prompt 要求大模型只输出 JSON：
 
 当程序判断为高危且人工确认后：
 
-- 调用 `PUT /api/open/ipgroup`。
+- 调用 `POST /api/open/ipgroup/append`。
 - 将恶意 IP 写入黑名单 IP 组。
 - 后续同一 IP 请求被雷池拦截。
 
@@ -335,6 +344,7 @@ if __name__ == "__main__":
 ```python
 # safeline_api.py
 import os
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -342,19 +352,35 @@ load_dotenv()
 
 BASE = os.getenv("SAFELINE_BASE_URL")
 TOKEN = os.getenv("SAFELINE_API_TOKEN")
+BLACKLIST_GROUP = os.getenv("BLACKLIST_GROUP", "ai-agent-blacklist")
 
-HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+HEADERS = {"X-SLCE-API-TOKEN": TOKEN}
 
-def fetch_attack_records():
-    url = f"{BASE}/api/open/records/acl"
-    resp = requests.get(url, headers=HEADERS, timeout=30)
+def fetch_attack_records(limit: int = 100):
+    now = int(time.time())
+    params = {"start": now - 86400, "end": now, "page": 1, "page_size": min(limit, 100)}
+    url = f"{BASE}/api/open/records"
+    resp = requests.get(url, headers=HEADERS, params=params, timeout=30, verify=False)
     resp.raise_for_status()
-    return resp.json().get("data", [])
+    return resp.json().get("data", {}).get("data", [])
+
+def get_or_create_blacklist_group() -> int:
+    groups = requests.get(
+        f"{BASE}/api/open/ipgroup", headers=HEADERS, timeout=30, verify=False
+    ).json().get("data", {}).get("nodes", [])
+    for group in groups:
+        if group.get("comment") == BLACKLIST_GROUP:
+            return group["id"]
+    return requests.post(
+        f"{BASE}/api/open/ipgroup", headers=HEADERS,
+        json={"comment": BLACKLIST_GROUP, "ips": []}, timeout=30, verify=False
+    ).json()["data"]
 
 def add_ip_to_blacklist(ip: str):
-    url = f"{BASE}/api/open/ipgroup"
-    body = {"ip": ip, "group": "ai-agent-blacklist"}
-    resp = requests.put(url, headers=HEADERS, json=body, timeout=30)
+    url = f"{BASE}/api/open/ipgroup/append"
+    group_id = get_or_create_blacklist_group()
+    body = {"ip_group_ids": [group_id], "ips": [ip]}
+    resp = requests.post(url, headers=HEADERS, json=body, timeout=30, verify=False)
     resp.raise_for_status()
     return resp.json()
 ```
@@ -523,8 +549,10 @@ DVWA 映射到 4280，雷池上游填 `http://127.0.0.1:4280`。
 
 | 接口                    | 方法 | 用途             |
 | ----------------------- | ---- | ---------------- |
-| `/api/open/records/acl` | GET  | 拉取攻击记录     |
-| `/api/open/ipgroup`     | PUT  | 写入 IP 黑名单组 |
+| `/api/open/records`        | GET  | 拉取攻击记录     |
+| `/api/open/ipgroup`        | GET  | 获取 IP 组列表   |
+| `/api/open/ipgroup`        | POST | 创建 IP 组       |
+| `/api/open/ipgroup/append` | POST | 追加 IP 到指定组 |
 
 具体字段以雷池官方 Open API 文档为准。使用前在控制台创建 API Token。
 
