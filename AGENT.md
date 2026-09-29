@@ -53,9 +53,14 @@
 ```
 requests
 python-dotenv
+pytest
+fastapi
+uvicorn
+jinja2
+httpx
 ```
 
-**不引入**：LangChain、LlamaIndex、FastAPI、SQLAlchemy、pandas 等重依赖。MVP 阶段保持极简。
+**不引入**：LangChain、LlamaIndex、SQLAlchemy、pandas 等重依赖。MVP 阶段保持极简。
 
 ### 2.3 外部服务
 
@@ -597,6 +602,14 @@ feat: 实现雷池攻击日志拉取
 - 不得使用 `git push --force` 覆盖远程历史，除非用户明确要求并确认。
 - 不得将 `.env`、`reports/`、`__pycache__/` 提交到仓库。
 - 不得跳过提交直接进入下一个功能开发。
+
+### 15. Web GUI 约定
+
+- 后端用 FastAPI + Uvicorn；
+- 前端用 Jinja2 模板 + 原生 HTML/CSS/JS，不引入 React/Vue；
+- 所有 API 走 `/api/` 前缀；
+- 前端页面只调用后端 API，不直接调用雷池或大模型；
+- 密钥仍然只在 `.env`，后端读取，不暴露给前端。
 
 **本文件版本：v1.0**
 **最后更新：项目启动日**
