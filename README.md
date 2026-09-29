@@ -1,604 +1,291 @@
-# 雷池 WAF + AI Agent 审计增强项目 README
+# 雷池哨兵（SafeLine Sentinel）v1.0.0
 
-> 本仓库已完成雷池哨兵 MVP；接口契约以 AGENT.md 第 5.7 节和实际代码为准。
+> 基于长亭雷池社区版 Open API 的 AI 增强 WAF 审计与辅助决策 Agent。
 
-```bash
-python -m pytest tests/ -v
-python main.py --dry-run
-python main.py --limit 100
+雷池哨兵不修改、不逆向雷池源码，只通过 Open API 获取攻击日志、复用雷池黑名单能力，并使用大模型辅助分析灰地带请求。AI 只提供研判建议，写入黑名单前仍由人工确认。
+
+## 核心能力
+
+- 拉取雷池攻击日志，并同时展示雷池阻断与放行记录。
+- 使用 `action`、`risk_level`、`rule_id` 进行 clean / malicious / unknown 预分类。
+- 仅将 unknown 记录交给大模型研判，降低调用量和成本。
+- 严格校验大模型固定 JSON 输出，解析失败时记录原始输出并跳过。
+- 高危 unknown 记录经人工确认后追加到雷池黑名单 IP 组。
+- 生成可解释的 Markdown 审计报告。
+- 提供 FastAPI + Jinja2 原生 Web GUI。
+- 支持 CLI dry-run，便于无网络演示和自动化测试。
+
+## 架构
+
+```text
+攻击流量
+   |
+   v
+雷池 WAF / Open API / 黑名单
+   |
+   | GET /api/open/records
+   | POST /api/open/ipgroup/append
+   v
+雷池哨兵
+   |-- classifier.py    规则预分类
+   |-- ai_analyzer.py   unknown 大模型研判
+   |-- app.py           FastAPI Web API
+   |-- report.py        Markdown 报告
+   |-- main.py          CLI / Web 编排入口
+   |
+   v
+安全运营人员确认与审计
 ```
 
-`--dry-run` 使用固定样本，不访问雷池或大模型，也不等待人工输入。正式运行前按 `.env.example` 配置 `.env`。
-
-## Web GUI
-
-### 启动方式
-
-```bash
-python main.py --web
-python main.py --web --host 127.0.0.1 --port 8000
-```
-
-默认访问地址为 `http://127.0.0.1:8000`。Web GUI 只调用后端 `/api/` 接口，雷池 Token 和大模型密钥不会发送到浏览器。
-
-### 页面功能
-
-1. **攻击日志**：展示 `src_ip`、`host`、`url_path`、`risk_level`、`action`、`rule_id`、`created_at`。
-2. **分类统计**：展示 clean、malicious、unknown 三种规则分类数量。
-3. **AI 研判**：对 unknown 记录调用后端和既有大模型模块，展示固定 JSON 结果。
-4. **黑名单**：高危结果提供写入按钮，人工确认后调用后端追加 IP。
-5. **报告**：列出 `reports/` 下的 Markdown 文件并查看内容。
-
-### API 列表
-
-| 方法 | 路径 | 作用 |
-| --- | --- | --- |
-| GET | `/api/records` | 按 `hours`、`page`、`page_size` 拉取攻击日志 |
-| GET | `/api/classify` | 返回三类计数和分类明细 |
-| POST | `/api/analyze` | 对 unknown 记录调用 AI 研判 |
-| POST | `/api/block` | 写入雷池黑名单 IP 组 |
-| GET | `/api/reports` | 列出 Markdown 报告 |
-| GET | `/api/reports/{filename}` | 读取指定报告内容 |
-
-所有 API 响应结构统一为 `{code, message, data}`。
-
-### 演示流程
-
-1. 配置 `.env`，启动雷池和 DVWA。
-2. 运行 `python main.py --web` 并打开控制台。
-3. 刷新攻击日志，对比雷池已阻断和已放行记录。
-4. 对 unknown 记录点击「AI 研判」，查看结构化证据和处置建议。
-5. 对高危结果点击「写入黑名单」，确认后完成追加。
-6. 在报告区查看本次闭环生成的 Markdown 报告。
-
----
-
-## 0. 给 AI 编码助手的指令
-
-请根据本 README 生成一个 Python 项目，项目名 `safeline-sentinel`。
-
-要求：
-
-1. 使用 Python 3.10+，依赖 `requests`、`python-dotenv`、`fastapi`、`uvicorn`、`jinja2`。
-2. 通过雷池 Open API 拉取攻击日志。
-3. 实现规则预分类：`clean` / `malicious` / `unknown`。
-4. 只把 `unknown` 的灰地带请求交给大模型研判。
-5. 大模型输出固定 JSON：危险等级、攻击类型、证据、建议、建议规则。
-6. 程序根据 JSON 自行判断是否高危。
-7. 高危时请求人工确认 `y/n`。
-8. 确认后通过雷池 Open API 把恶意 IP 写入黑名单 IP 组。
-9. 生成 Markdown 报告到 `reports/`。
-10. 所有密钥放 `.env`，不得硬编码，不得上传 GitHub。
-11. 不修改、不逆向、不反编译雷池源码，只做外挂式集成。
-
----
-
-## 1. 项目背景
-
-传统 WAF 依赖固定规则集（如 OWASP CRS），规则天然滞后。AI 生成的攻击载荷可以较高比例绕过传统 WAF。长亭雷池的语义分析引擎很强，但新型攻击、精心构造的变异请求仍可能存在盲区。
-
-本项目基于长亭雷池社区版，做一个 **AI 增强的 WAF 审计与辅助决策 Agent**。它不替代雷池，也不修改雷池源码，而是通过雷池 Open API 拉取日志，用规则预分类降低 AI 负载，只把灰地带交给大模型研判，再把恶意 IP 写回雷池黑名单，形成“发现 → 研判 → 封禁 → 报告”的闭环。
-
----
-
-## 2. 项目目标
-
-- 演示一个完整的最小 AI Agent 闭环。
-- 展示对雷池架构、Open API、WAF 规则滞后问题的理解。
-- 用于面试答辩，尤其是投递长亭时展示产品理解与扩展能力。
-- 一周内可落地、可演示、可讲清楚。
-
----
-
-## 3. 核心原则与合规
-
-- **不碰雷池源码**：不修改、不逆向、不反编译、不衍生。
-- **外挂式集成**：只通过雷池 Open API 读写数据。
-- **AI 做建议，人做决策**：高危操作必须人工确认。
-- **规则预分类优先**：能规则判定的不调 AI，降低负载和成本。
-- **建议规则优于自动封禁**：AI 输出规则草案，人工审核后再写入。
-- **所有测试在本地隔离环境进行**，不扫描未授权目标。
-
----
-
-## 4. 总体架构
-
-```
-攻击请求
-   ↓
-雷池 WAF（Tengine → Detector → 放行/阻断/人机验证）
-   ↓
-雷池日志（Luigi）通过 Open API 暴露
-   ↓
-你的 AI Agent
-   ├─ 拉取日志：GET /api/open/records
-   ├─ 规则预分类：clean / malicious / unknown
-   ├─ unknown → 调用大模型研判
-   ├─ 大模型输出固定 JSON
-   ├─ 程序解析 JSON，自行判断危险等级
-   ├─ 高危 → 人工确认 y/n
-   ├─ 确认后：POST /api/open/ipgroup/append 追加黑名单 IP
-   └─ 生成 Markdown 报告
-   ↓
-雷池黑名单生效，后续请求被拦截
-```
-
----
-
-## 5. 技术栈
-
-| 组件                           | 用途                          |
-| ------------------------------ | ----------------------------- |
-| Ubuntu 24.04                   | 虚拟机服务器                  |
-| Docker / Docker Compose        | 运行雷池和 DVWA               |
-| 雷池社区版                     | WAF，提供检测、日志、Open API |
-| DVWA                           | 漏洞靶场，生成攻击流量        |
-| Python 3.10+                   | AI Agent 主程序               |
-| requests                       | 调用雷池 API 和大模型 API     |
-| DeepSeek API / 兼容 OpenAI API | 大模型研判                    |
-| FastAPI / Uvicorn              | Web API 与本地服务            |
-| Jinja2 / 原生 HTML/CSS/JS      | Web GUI 页面与交互            |
-| Markdown                       | 报告输出                      |
-
----
-
-## 6. 环境与部署
-
-### 6.1 环境要求
-
-- CPU：x86_64，支持 `ssse3`
-- 内存：≥ 1 GB，建议 2 GB+
-- 磁盘：≥ 5 GB
-- Docker：≥ 20.10.14
-- Docker Compose：≥ 2.0.0
-- 80 / 443 端口空闲
-
-检查命令：
-
-```bash
-uname -m
-lscpu | grep ssse3
-docker version
-docker compose version
-free -h
-df -h
-ss -tlnp | grep -E ':80|:443'
-```
-
-### 6.2 部署雷池
-
-```bash
-mkdir -p /data/safeline
-cd /data/safeline
-wget https://waf-ce.chaitin.cn/release/latest/compose.yaml
-```
-
-创建 `.env`：
-
-```env
-SAFELINE_DIR=/data/safeline
-POSTGRES_PASSWORD=ChangeMe_StrongPass123
-MGT_PORT=9443
-IMAGE_TAG=latest
-SUBNET_PREFIX=172.22.222
-IMAGE_PREFIX=swr.cn-east-3.myhuaweicloud.com/chaitin-safeline
-ARCH_SUFFIX=
-RELEASE=
-REGION=
-```
-
-启动：
-
-```bash
-docker compose up -d
-docker ps
-```
-
-获取初始管理员密码：
-
-```bash
-docker exec safeline-mgt resetadmin
-```
-
-访问控制台：
-
-```
-https://<虚拟机IP>:9443
-```
-
-用户名 `admin`，密码用上一步获取的。
-
-### 6.3 部署 DVWA 靶场
-
-```bash
-docker run -d --name dvwa -p 4280:80 vulnerables/web-dvwa
-docker ps | grep dvwa
-```
-
-访问 `http://127.0.0.1:4280` 确认靶场可用。默认账号：`admin / password`。
-
-### 6.4 自签名证书
-
-```bash
-mkdir -p /data/safeline/certs && cd /data/safeline/certs
-openssl req -x509 -newkey rsa:2048 -keyout dvwa.key -out dvwa.crt -days 365 -nodes \
-  -subj "/CN=YOUR_VM_IP" \
-  -addext "subjectAltName=IP:YOUR_VM_IP"
-```
-
-将 `YOUR_VM_IP` 替换为虚拟机 IP。生成 `dvwa.crt` 和 `dvwa.key`。
-
-在雷池控制台：**通用设置 → 证书管理 → 添加证书 → 上传已有证书**。
-
-### 6.5 雷池添加防护站点
-
-- 进入 **防护站点 → 站点管理 → 添加站点**。
-- 域名：虚拟机 IP 或测试域名。
-- 端口：80（HTTP）。
-- 上游服务器：`http://127.0.0.1:4280`（DVWA）。
-- 绑定上一步上传的证书。
-- 保存。
-
-验证：浏览器访问 `http://<虚拟机IP>` 或 `https://<虚拟机IP>`，应看到 DVWA 页面。
-
----
-
-## 7. 核心模块设计
-
-### 7.1 日志拉取
-
-雷池 Open API：
-
-- `GET /api/open/records`：按秒级 `start`、`end` 时间戳和分页参数拉取攻击记录。
-- `GET /api/open/ipgroup`：查询 IP 组；不存在时用 `POST /api/open/ipgroup` 创建。
-- `POST /api/open/ipgroup/append`：向已有 IP 组追加黑名单 IP。
-
-需要在雷池控制台创建 API Token，放入 `.env`。
-
-### 7.2 规则预分类
-
-对每条日志做规则判断，输出三类：
-
-- `clean`：明确正常，跳过。
-- `malicious`：明确恶意，直接进入封禁流程或告警。
-- `unknown`：规则无法判定，交给大模型。
-
-示例规则维度：
-
-- UA 是否为空或异常。
-- 路径是否包含敏感关键词。
-- 参数是否包含 SQL 注入、XSS、命令注入等特征。
-- 请求频率是否异常。
-- 来源 IP 是否在高频攻击列表。
-
-目标：约 60% 流量被规则分流，AI 只处理约 40% 灰地带。
-
-### 7.3 AI 研判
-
-Prompt 要求大模型只输出 JSON：
-
-```json
-{
-  "危险等级": "高/中/低",
-  "攻击类型": "一句话描述",
-  "证据": ["证据1", "证据2"],
-  "建议": "一句话处置建议",
-  "建议规则": "可选的规则草案"
-}
-```
-
-程序解析 JSON，不信任自由文本。
-
-### 7.4 写回雷池
-
-当程序判断为高危且人工确认后：
-
-- 调用 `POST /api/open/ipgroup/append`。
-- 将恶意 IP 写入黑名单 IP 组。
-- 后续同一 IP 请求被雷池拦截。
-
-### 7.5 人工确认
-
-高危操作前暂停：
-
-```python
-choice = input("检测到高危事件，是否写入雷池黑名单？(y/n)：").strip().lower()
-if choice == "y":
-    # 写回雷池
-else:
-    # 取消，仅记录报告
-```
-
-### 7.6 报告生成
-
-输出 `reports/report_YYYYMMDD_HHMMSS.md`，包含：
-
-- 原始请求摘要
-- 规则预分类结果
-- AI 研判 JSON
-- 是否人工确认
-- 是否写入黑名单
-- 建议规则草案
-
----
-
-## 8. 代码结构建议
-
-```
+## 技术栈
+
+| 组件 | 用途 |
+| --- | --- |
+| Python 3.10+ | 应用运行时 |
+| requests / python-dotenv | Open API 与环境配置 |
+| FastAPI / Uvicorn | Web API 与本地服务 |
+| Jinja2 / HTML / CSS / JS | Web GUI |
+| DeepSeek 或 OpenAI 兼容 API | unknown 请求研判 |
+| Markdown | 审计报告 |
+| pytest / FastAPI TestClient | 自动化测试 |
+
+## 目录结构
+
+```text
 safeline-sentinel/
+├── app.py
 ├── main.py
 ├── config.py
 ├── safeline_api.py
 ├── classifier.py
 ├── ai_analyzer.py
 ├── report.py
+├── logger.py
+├── templates/
+│   └── index.html
+├── static/
+│   ├── style.css
+│   └── app.js
+├── tests/
+│   ├── test_api.py
+│   ├── test_analyzer.py
+│   ├── test_classifier.py
+│   ├── test_main.py
+│   ├── test_report.py
+│   └── test_safeline_api.py
 ├── requirements.txt
 ├── .env.example
-├── .gitignore
-├── logs/
-│   └── sample_auth.log
-└── reports/
+└── README.md
 ```
 
----
+## 快速开始
 
-## 9. 最小代码骨架
+### 1. 安装依赖
 
-```python
-# main.py
-import json
-from safeline_api import fetch_attack_records, add_ip_to_blacklist
-from classifier import classify
-from ai_analyzer import analyze_unknown
-from report import write_report
+```bash
+python -m venv .venv
 
-def main():
-    records = fetch_attack_records()
-    unknown_records = []
+# Windows
+.venv\Scripts\activate
 
-    for record in records:
-        label = classify(record)
-        if label == "clean":
-            continue
-        if label == "malicious":
-            # 直接进入封禁流程，或记录
-            handle_malicious(record)
-        else:
-            unknown_records.append(record)
+# Linux / macOS
+source .venv/bin/activate
 
-    for record in unknown_records:
-        result = analyze_unknown(record)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-
-        if result.get("危险等级") == "高":
-            choice = input("高危，是否写入雷池黑名单？(y/n)：").strip().lower()
-            if choice == "y":
-                add_ip_to_blacklist(record["ip"])
-                write_report(record, result, blocked=True)
-            else:
-                write_report(record, result, blocked=False)
-        else:
-            write_report(record, result, blocked=False)
-
-if __name__ == "__main__":
-    main()
+pip install -r requirements.txt
 ```
 
-```python
-# safeline_api.py
-import os
-import time
-import requests
-from dotenv import load_dotenv
+### 2. 配置环境变量
 
-load_dotenv()
+```bash
+# Windows
+copy .env.example .env
 
-BASE = os.getenv("SAFELINE_BASE_URL")
-TOKEN = os.getenv("SAFELINE_API_TOKEN")
-BLACKLIST_GROUP = os.getenv("BLACKLIST_GROUP", "ai-agent-blacklist")
-
-HEADERS = {"X-SLCE-API-TOKEN": TOKEN}
-
-def fetch_attack_records(limit: int = 100):
-    now = int(time.time())
-    params = {"start": now - 86400, "end": now, "page": 1, "page_size": min(limit, 100)}
-    url = f"{BASE}/api/open/records"
-    resp = requests.get(url, headers=HEADERS, params=params, timeout=30, verify=False)
-    resp.raise_for_status()
-    return resp.json().get("data", {}).get("data", [])
-
-def get_or_create_blacklist_group() -> int:
-    groups = requests.get(
-        f"{BASE}/api/open/ipgroup", headers=HEADERS, timeout=30, verify=False
-    ).json().get("data", {}).get("nodes", [])
-    for group in groups:
-        if group.get("comment") == BLACKLIST_GROUP:
-            return group["id"]
-    return requests.post(
-        f"{BASE}/api/open/ipgroup", headers=HEADERS,
-        json={"comment": BLACKLIST_GROUP, "ips": []}, timeout=30, verify=False
-    ).json()["data"]
-
-def add_ip_to_blacklist(ip: str):
-    url = f"{BASE}/api/open/ipgroup/append"
-    group_id = get_or_create_blacklist_group()
-    body = {"ip_group_ids": [group_id], "ips": [ip]}
-    resp = requests.post(url, headers=HEADERS, json=body, timeout=30, verify=False)
-    resp.raise_for_status()
-    return resp.json()
+# Linux / macOS
+cp .env.example .env
 ```
 
-```python
-# classifier.py
-SUSPICIOUS_KEYS = [
-    "union select", "sql injection", "failed password",
-    "nmap", "mimikatz", "powershell", "brute force"
-]
+主要配置项：
 
-def classify(record):
-    text = str(record).lower()
-    for key in SUSPICIOUS_KEYS:
-        if key in text:
-            return "malicious"
-    # 这里可加入更多规则，暂时返回 unknown
-    return "unknown"
+| 配置 | 说明 |
+| --- | --- |
+| `SAFELINE_BASE_URL` | 雷池控制台地址 |
+| `SAFELINE_API_TOKEN` | 雷池 API Token |
+| `LLM_API_KEY` | 大模型 API Key |
+| `LLM_API_URL` | OpenAI 兼容接口地址 |
+| `LLM_MODEL` | 模型名，默认 `deepseek-chat` |
+| `BLACKLIST_GROUP` | 黑名单 IP 组名 |
+| `LLM_PROXY` | 可选的大模型 HTTP/HTTPS 代理 |
+| `LLM_VERIFY_SSL` | 是否校验大模型 TLS 证书，默认 `true` |
+| `WEB_HOST` | Web 监听地址，默认 `127.0.0.1` |
+| `WEB_PORT` | Web 监听端口，默认 `8000` |
+
+`.env` 已被 `.gitignore` 排除，不要提交真实密钥。
+
+### 3. 运行测试
+
+```bash
+python -m pytest tests/ -v
 ```
 
-```python
-# ai_analyzer.py
-import json
-import os
-import requests
+### 4. CLI dry-run
 
-API_KEY = os.getenv("LLM_API_KEY")
-API_URL = os.getenv("LLM_API_URL")
-MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
-
-def analyze_unknown(record):
-    prompt = f"""
-你是安全分析师。请判断以下请求是否构成攻击。
-只输出 JSON，不要输出其他文字。
-格式：
-{{
-  "危险等级": "高/中/低",
-  "攻击类型": "一句话",
-  "证据": ["证据1"],
-  "建议": "一句话处置建议",
-  "建议规则": "可选规则草案"
-}}
-
-请求记录：
-{json.dumps(record, ensure_ascii=False)}
-"""
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    body = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2
-    }
-    resp = requests.post(API_URL, headers=headers, json=body, timeout=60)
-    resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"]
-    return json.loads(content)
+```bash
+python main.py --dry-run
 ```
 
-```python
-# report.py
-import os
-from datetime import datetime
+dry-run 使用固定样本，不访问雷池和大模型，不等待人工输入，并会在 `reports/` 下生成报告。
 
-def write_report(record, result, blocked: bool, path="reports"):
-    os.makedirs(path, exist_ok=True)
-    filename = f"{path}/report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write("# 雷池 AI Agent 安全事件报告\n\n")
-        f.write(f"- 时间：{datetime.now().isoformat()}\n")
-        f.write(f"- 来源 IP：{record.get('ip')}\n")
-        f.write(f"- 危险等级：{result.get('危险等级')}\n")
-        f.write(f"- 攻击类型：{result.get('攻击类型')}\n")
-        f.write(f"- 证据：{', '.join(result.get('证据', []))}\n")
-        f.write(f"- 建议：{result.get('建议')}\n")
-        f.write(f"- 建议规则：{result.get('建议规则', '无')}\n")
-        f.write(f"- 是否写入黑名单：{'是' if blocked else '否'}\n")
-    print(f"报告已写入 {filename}")
+### 5. CLI 正式运行
+
+```bash
+python main.py --limit 100
 ```
 
----
+正式运行会拉取雷池日志。高危 unknown 记录会在终端等待 `y/n` 确认。
 
-## 10. 演示流程
+### 6. 启动 Web GUI
 
-1. 启动雷池和 DVWA。
-2. 在 DVWA 中选择 SQL Injection，安全级别 Low。
-3. 提交一个精心构造、可绕过基础规则的恶意请求。
-4. 雷池可能放行或记录为低风险。
-5. AI Agent 拉取日志，规则预分类为 `unknown`。
-6. AI 研判为高危 SQL 注入，输出 JSON 和建议规则。
-7. 程序请求人工确认，输入 `y`。
-8. 程序调用雷池 Open API，把攻击 IP 写入黑名单。
-9. 再次提交同一请求，雷池拦截。
-10. 生成 Markdown 报告。
+```bash
+python main.py --web
+```
 
----
+默认访问：
 
-## 11. 7 天冲刺计划
+```text
+http://127.0.0.1:8000
+```
 
-| 天数    | 任务                                      | 交付                     |
-| ------- | ----------------------------------------- | ------------------------ |
-| Day 1-2 | 部署雷池，打通 Open API，拉取攻击日志     | 能打印雷池攻击记录       |
-| Day 3-4 | 规则预分类 + AI 研判核心                  | 输入日志，输出 JSON 研判 |
-| Day 5   | 写回闭环：AI 判定 → 人工确认 → 写入黑名单 | 发现 → 研判 → 封禁可演示 |
-| Day 6   | 上传 GitHub，写 README，删 Token          | 可访问仓库               |
-| Day 7   | 彩排，录屏，准备面试话术                  | 稳定演示 + 备份视频      |
+也可以显式指定监听地址和端口：
 
----
+```bash
+python main.py --web --host 127.0.0.1 --port 8000
+```
 
-## 12. 面试话术
+## Web GUI
 
-**为什么选雷池做二开？**
+页面包含五个区块：
 
-> 我投长亭，所以想真正理解你们的产品。雷池的语义分析引擎很强，但新型攻击和变异请求仍可能漏过。我做的不是替代雷池的 AI-WAF，而是一个 AI 增强的雷池审计层。通过雷池 Open API 拉日志，规则预分类降低 AI 负载，只把灰地带交给大模型研判，再把恶意 IP 写回雷池黑名单。整个流程不碰雷池源码，完全合规。
+1. 攻击日志：展示来源 IP、域名、路径、风险等级、动作、规则 ID 和时间。
+2. 分类统计：展示 clean、malicious、unknown 数量。
+3. AI 研判：展示固定 JSON 的结构化卡片和证据列表。
+4. 黑名单：高危结果经确认后写入雷池黑名单组。
+5. 报告：列出并查看 `reports/` 中的 Markdown 文件。
 
-**为什么不让 AI 直接拦截？**
+前端只调用后端 `/api/` 接口，不直接持有雷池或大模型密钥。
 
-> 直接让 AI 介入流量拦截会引入延迟和误杀风险。雷池 Detector 是微秒级判断，AI 推理即使很快也是毫秒级。更关键的是，AI 误判直接影响线上业务。所以 AI 是“第二双眼睛”，负责研判和建议，封禁动作通过雷池已有黑名单机制生效。
+### Web API
 
-**规则预分类怎么做？**
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| GET | `/api/records` | 按 `hours`、`page`、`page_size` 拉取攻击日志 |
+| GET | `/api/classify` | 返回分类计数和分类明细 |
+| POST | `/api/analyze` | 对 unknown 记录执行 AI 研判 |
+| POST | `/api/block` | 将指定 IP 追加到黑名单组 |
+| GET | `/api/reports` | 列出 Markdown 报告 |
+| GET | `/api/reports/{filename}` | 读取指定报告内容 |
 
-> 互联网扫描器套路高度固定，sqlmap、gobuster 等用规则就能识别。预分类器对每个 IP 给出 clean、malicious、unknown 三种判定。实测约 60% 流量被规则分流，AI 只需处理 40% 灰地带。
+所有 API 统一返回：
 
-**最大局限是什么？**
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```
 
-> 第一，日志来自本地模拟环境，不是真实生产流量。第二，AI 研判准确率还未系统评估。第三，规则预分类覆盖面有限。下一步会引入真实攻击样本评估，并让 AI 生成的规则草案经人工审核后写入雷池自定义规则。
+## 核心流程
 
----
+1. 通过 `GET /api/open/records` 拉取雷池攻击日志。
+2. `classifier.py` 输出 clean、malicious、unknown。
+3. clean 记录跳过，malicious 记录保留审计结果。
+4. unknown 记录调用 `ai_analyzer.py`。
+5. 大模型必须返回固定 JSON：危险等级、攻击类型、证据、建议、建议规则。
+6. 高危 unknown 记录等待人工确认。
+7. 确认后调用 `POST /api/open/ipgroup/append` 追加黑名单。
+8. 生成 Markdown 报告，记录请求摘要、证据和处置结果。
 
-## 13. 避坑清单
+## 雷池 Open API 约定
 
-- 不修改、不逆向、不反编译雷池源码。
-- 不训练模型，一周不够，使用大模型 API 推理。
-- 不陷入雷池内部规则细节，只处理日志和 API。
-- API Token 放 `.env`，`.gitignore` 排除。
-- 高危操作必须人工确认。
-- 建议规则优于自动封禁。
-- 所有测试在本地隔离环境，不扫描未授权目标。
-
----
-
-## 14. 常见问题
-
-**80 / 443 被占用？**
-
-停掉占用服务，或修改其监听端口。
-
-**控制台打不开？**
-
-确认 `MGT_PORT` 已放行，使用 HTTPS 访问。
-
-**DVWA 端口冲突？**
-
-DVWA 映射到 4280，雷池上游填 `http://127.0.0.1:4280`。
-
-**证书报错？**
-
-自签名证书正常提示“不安全”，选择继续访问。生成证书时确保 SAN 包含 IP。
-
-**镜像拉取失败？**
-
-检查 `.env` 中 `IMAGE_PREFIX` 是否为华为云地址，或改为 `chaitin`。
-
----
-
-## 15. 附录：雷池 API 参考
-
-| 接口                    | 方法 | 用途             |
-| ----------------------- | ---- | ---------------- |
-| `/api/open/records`        | GET  | 拉取攻击记录     |
-| `/api/open/ipgroup`        | GET  | 获取 IP 组列表   |
-| `/api/open/ipgroup`        | POST | 创建 IP 组       |
+| 接口 | 方法 | 用途 |
+| --- | --- | --- |
+| `/api/open/records` | GET | 拉取攻击日志 |
+| `/api/open/ipgroup` | GET | 获取 IP 组列表 |
+| `/api/open/ipgroup` | POST | 创建 IP 组 |
 | `/api/open/ipgroup/append` | POST | 追加 IP 到指定组 |
 
-具体字段以雷池官方 Open API 文档为准。使用前在控制台创建 API Token。
+认证头：
 
----
+```text
+X-SLCE-API-TOKEN: <token>
+```
 
-> 本 README 可直接作为 Vibe Coding 上下文。把整份文档粘贴给 AI 编码助手，并说：“请根据这份 README 生成完整可运行项目。”
+实现优先使用秒级 `start/end` 参数。部分雷池实例实际按毫秒过滤但返回的 `created_at` 仍为秒级，因此实现会在秒级请求无结果时自动使用毫秒参数重试。
+
+## 安全与合规
+
+- 不修改、不逆向、不反编译雷池源码。
+- 所有雷池交互只通过 Open API。
+- 密钥只从 `.env` 读取，不发送到前端。
+- 高危操作不自动执行，Web 使用确认对话框，CLI 使用 `input()`。
+- 自动化测试全部 mock 外部服务，不调用真实雷池或大模型。
+- 日志不会输出 API Token、密码或完整请求头。
+- `LLM_VERIFY_SSL` 默认保持 `true`。仅在受控本地代理环境下，才可按需关闭。
+
+## 当前局限
+
+- 分类器目前以规则关键词为主，并非完整语义检测引擎。
+- AI 研判可能产生误报或漏报，不能替代安全人员决策。
+- 尚无数据库和历史事件聚合能力，报告以本地文件存储。
+- 演示数据来自本地隔离环境，尚未进行真实生产流量评估。
+- LLM 代理和证书配置与运行环境相关，需要按部署环境调整。
+
+## 演示流程
+
+1. 启动雷池和 DVWA。
+2. 配置 `.env`，确认雷池 Open API 和大模型 API 均可用。
+3. 运行 `python main.py --web`。
+4. 打开 `http://127.0.0.1:8000`。
+5. 刷新攻击日志，观察雷池阻断和放行记录。
+6. 对 unknown 记录点击「AI 研判」。
+7. 查看危险等级、攻击类型和证据。
+8. 对高危结果执行人工确认并写入黑名单。
+9. 在报告区查看 Markdown 审计报告。
+
+## 常见问题
+
+### 页面没有攻击日志
+
+- 检查雷池时间范围内是否存在日志。
+- 检查 `SAFELINE_BASE_URL` 和 `SAFELINE_API_TOKEN`。
+- 检查机器代理是否错误拦截了局域网雷池地址。
+
+### 雷池接口返回 502
+
+- 确认雷池服务正在运行。
+- 确认 `SAFELINE_BASE_URL` 可访问。
+- 检查系统级 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`。
+
+### AI 研判返回 502
+
+- 检查 `LLM_API_URL`、`LLM_API_KEY` 和 `LLM_MODEL`。
+- 如果使用本地代理，配置 `LLM_PROXY`。
+- 如果代理使用本地 TLS 证书，按受控环境要求配置 CA 或设置 `LLM_VERIFY_SSL`。
+
+### 报告列表为空
+
+- 先运行 `python main.py --dry-run` 或在 Web 页面完成一次研判。
+- 确认 `reports/` 目录存在且可写。
+
+## v1.0.0 发布内容
+
+- 完成雷池 Open API 对接和兼容性处理。
+- 完成规则预分类和大模型固定 JSON 研判。
+- 完成人工确认、黑名单追加和 Markdown 报告闭环。
+- 完成 FastAPI Web GUI 和原生前端。
+- 完成 22 项自动化测试。
+- 完成 CLI dry-run、Web 冒烟和真实大模型联调验证。
+
+## 声明
+
+本项目仅用于学习、研究和面试演示，与长亭科技无隶属关系。请仅在获得授权的本地隔离环境中使用。
