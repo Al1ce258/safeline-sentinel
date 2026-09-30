@@ -42,12 +42,12 @@ def test_records_api_uses_fetch_arguments(monkeypatch, client: TestClient) -> No
     """日志 API 应传递 hours、page、page_size 并返回统一结构。"""
     calls = []
 
-    def fake_fetch(*, limit: int, hours: int, page: int, page_size: int) -> list[dict]:
+    def fake_fetch(*, hours: int, page: int, page_size: int) -> dict:
         """记录参数并返回固定记录。"""
-        calls.append((limit, hours, page, page_size))
-        return _records()[:1]
+        calls.append((hours, page, page_size))
+        return {"records": _records()[:1], "total": 1, "page": page, "page_size": page_size, "pages": 1}
 
-    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records_page", fake_fetch)
 
     response = client.get("/api/records?hours=6&page=2&page_size=20")
 
@@ -55,16 +55,18 @@ def test_records_api_uses_fetch_arguments(monkeypatch, client: TestClient) -> No
     body = response.json()
     assert body["code"] == 0
     assert body["data"]["records"][0]["event_id"] == "clean"
-    assert calls == [(20, 6, 2, 20)]
+    assert calls == [(6, 2, 20)]
+    assert body["data"]["page"] == 2
+    assert body["data"]["pages"] == 1
 
 
 def test_records_api_returns_unified_upstream_error(monkeypatch, client: TestClient) -> None:
     """雷池不可达时刷新接口应返回明确统一错误。"""
-    def fake_fetch(**kwargs: object) -> list[dict]:
+    def fake_fetch(**kwargs: object) -> dict:
         """模拟雷池连接失败。"""
         raise requests.ConnectionError("upstream unavailable")
 
-    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records_page", fake_fetch)
 
     response = client.get("/api/records")
 
@@ -80,9 +82,9 @@ def test_classify_api_returns_counts_and_details(monkeypatch, client: TestClient
     """分类 API 应返回三类计数与逐条明细。"""
     def fake_fetch(**kwargs: object) -> list[dict]:
         """返回固定三类记录。"""
-        return _records()
+        return {"records": _records(), "total": 3, "page": 1, "page_size": 100, "pages": 1}
 
-    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records_page", fake_fetch)
 
     response = client.get("/api/classify?hours=24&page=1&page_size=100")
 
@@ -175,7 +177,79 @@ def test_reports_api_lists_and_reads_markdown(monkeypatch, client: TestClient, r
 
     assert listing.status_code == 200
     assert listing.json()["data"]["total"] == 2
+    assert listing.json()["data"]["page"] == 1
+    assert listing.json()["data"]["pages"] == 1
     assert detail.status_code == 200
     assert detail.json()["data"]["content"] == "# 报告一"
     assert missing.status_code == 404
     assert missing.json()["code"] == 404
+
+
+def test_reports_api_paginates_markdown_files(monkeypatch, client: TestClient, report_dir: Path) -> None:
+    """报告 API 应按页返回文件并保留总数。"""
+    for index in range(7):
+        (report_dir / f"report-{index}.md").write_text(f"# 报告 {index}", encoding="utf-8")
+    monkeypatch.setattr(app, "REPORT_ROOT", report_dir)
+
+    first = client.get("/api/reports?page=1&page_size=3")
+    third = client.get("/api/reports?page=3&page_size=3")
+
+    assert first.status_code == 200
+    first_data = first.json()["data"]
+    assert first_data["total"] == 7
+    assert first_data["pages"] == 3
+    assert first_data["page"] == 1
+    assert len(first_data["reports"]) == 3
+    assert third.json()["data"]["page"] == 3
+    assert len(third.json()["data"]["reports"]) == 1
+
+
+def test_settings_api_updates_whitelisted_values(monkeypatch, client: TestClient) -> None:
+    """配置 API 应把白名单值交给动态配置模块。"""
+    captured = {}
+
+    def fake_update(settings: dict) -> dict:
+        """记录更新内容并返回脱敏公开状态。"""
+        captured.update(settings)
+        return {"values": {"SAFELINE_BASE_URL": settings["SAFELINE_BASE_URL"]}, "secret_configured": {}}
+
+    monkeypatch.setattr(app.config, "update_settings", fake_update)
+
+    response = client.put(
+        "/api/settings",
+        json={"settings": {"SAFELINE_BASE_URL": "https://waf.example.test"}},
+    )
+
+    assert response.status_code == 200
+    assert captured == {"SAFELINE_BASE_URL": "https://waf.example.test"}
+
+
+def test_auto_mode_requires_confirmation(monkeypatch, client: TestClient) -> None:
+    """开启自动托管时 API 必须要求二次确认。"""
+    called = []
+    monkeypatch.setattr(app.config, "update_settings", lambda value: called.append(value))
+
+    response = client.put("/api/auto-mode", json={"enabled": True})
+
+    assert response.status_code == 400
+    assert called == []
+
+
+def test_auto_mode_toggle_controls_manager(monkeypatch, client: TestClient) -> None:
+    """确认开启后应持久化开关并启动后台管理器。"""
+    updates = []
+    events = []
+
+    async def fake_start() -> dict:
+        """模拟启动任务。"""
+        events.append("start")
+        return {"enabled": True, "running": True}
+
+    monkeypatch.setattr(app.config, "update_settings", lambda value: updates.append(value))
+    monkeypatch.setattr(app.auto_mode_manager, "start", fake_start)
+
+    response = client.put("/api/auto-mode", json={"enabled": True, "confirm": True})
+
+    assert response.status_code == 200
+    assert updates == [{"AUTO_MODE_ENABLED": True}]
+    assert events == ["start"]

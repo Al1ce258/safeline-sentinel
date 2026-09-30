@@ -29,9 +29,9 @@
 
 1. **不碰雷池源码**：不修改、不逆向、不反编译、不衍生雷池任何文件。
 2. **外挂式集成**：所有与雷池的交互只通过 Open API。
-3. **AI 做建议，人做决策**：高危操作必须人工确认 `y/n` 后才能执行。
+3. **AI 做建议，人做决策**：默认模式下高危操作必须人工确认 `y/n`；可选全自动托管模式属于显式启用的例外。
 4. **密钥不落盘、不上传**：所有密钥通过 `.env` 读取，`.env` 必须在 `.gitignore` 中。
-5. **不自动执行破坏性操作**：不自动封禁、不自动删数据、不自动执行任何系统命令。
+5. **受控自动处置**：全自动模式默认关闭，开启需等效二次确认；仅自动封禁 AI 判定为高的 unknown 来源 IP，不自动删数据、不自动执行系统命令。
 6. **所有测试在本地隔离环境**：不扫描未授权目标，不对公网发起任何请求。
 7. **规则预分类优先**：能规则判定的不调 AI，降低负载和成本。
 8. **输出可解释**：每条 AI 判定必须附带证据和原始请求摘要。
@@ -82,17 +82,23 @@ safeline-sentinel/
 ├── .env.example             # 环境变量模板（不含真实值）
 ├── .gitignore               # 必须包含 .env、reports/、__pycache__/
 ├── main.py                  # 入口，编排主流程
+├── automation.py            # 全自动托管调度与自动处置
 ├── config.py                # 读取 .env，集中配置
 ├── safeline_api.py          # 雷池 Open API 封装
 ├── classifier.py            # 规则预分类
 ├── ai_analyzer.py           # 大模型研判
 ├── report.py                # 报告生成
+├── app.py                   # FastAPI Web API
+├── templates/               # Jinja2 页面模板
+├── static/                  # 原生 CSS / JavaScript
 ├── logger.py                # 日志封装（标准 logging）
 ├── reports/                 # 输出报告（.gitignore 排除）
 ├── logs/                    # 本地日志样本
 │   └── sample_access.log
 └── tests/                   # 单元测试
     ├── test_classifier.py
+    ├── test_config.py
+    ├── test_automation.py
     └── test_analyzer.py
 ```
 
@@ -147,7 +153,14 @@ LLM_API_KEY: str            # 大模型 API Key
 LLM_API_URL: str            # 大模型 API 地址
 LLM_MODEL: str              # 模型名，默认 deepseek-chat
 BLACKLIST_GROUP: str        # 黑名单 IP 组名，默认 ai-agent-blacklist
+AUTO_MODE_ENABLED: bool     # 全自动托管开关，默认 false
+AUTO_SCAN_INTERVAL_SECONDS: int  # 自动扫描间隔，默认 60 秒
+AUTO_LOOKBACK_HOURS: int    # 日志回溯范围，默认 24 小时
+AUTO_MAX_RECORDS_PER_SCAN: int   # 单轮最大记录数，默认 100
+AUTO_MAX_BLOCKS_PER_SCAN: int    # 单轮最大自动封禁数，默认 10
 ```
+
+Web GUI 可通过 `update_settings()` 更新白名单环境变量；密钥字段只允许覆盖，不允许回显。
 
 所有配置从 `.env` 读取，缺失时抛出 `ValueError` 并给出明确提示。
 
@@ -156,6 +169,9 @@ BLACKLIST_GROUP: str        # 黑名单 IP 组名，默认 ai-agent-blacklist
 ```python
 def fetch_attack_records(limit: int = 100) -> list[dict]:
     """拉取雷池攻击记录。返回列表，失败时抛出异常。"""
+
+def fetch_attack_records_page(hours: int = 24, page: int = 1, page_size: int = 20) -> dict:
+    """按页拉取雷池攻击记录并返回 records/total/page/page_size/pages。"""
 
 def add_ip_to_blacklist(ip: str) -> bool:
     """将 IP 写入雷池黑名单组。成功返回 True。"""
@@ -192,7 +208,7 @@ def analyze_unknown(record: dict) -> dict:
 ### 5.5 `report.py`
 
 ```python
-def write_report(record: dict, result: dict, blocked: bool) -> str:
+def write_report(record: dict, result: dict, blocked: bool, mode: str = "manual") -> str:
     """写入 Markdown 报告。返回报告文件路径。"""
 ```
 
@@ -201,6 +217,17 @@ def write_report(record: dict, result: dict, blocked: bool) -> str:
 ```python
 def main() -> None:
     """主流程：拉日志 → 分类 → 研判 → 人工确认 → 写回 → 报告。"""
+```
+
+### 5.6.1 `automation.py`
+
+```python
+class AutoModeManager:
+    """后台扫描并自动处置高危 unknown 记录。"""
+
+    async def start(self) -> dict: ...
+    async def stop(self) -> dict: ...
+    async def run_once(self) -> dict: ...
 ```
 
 ### 5.7 雷池 Open API 接口契约（已实测）
@@ -321,16 +348,18 @@ def main() -> None:
 
 ### 6.2 网络请求
 
-- 雷池 API 请求必须带 `Authorization` 头。
+- 雷池 API 请求必须带 `X-SLCE-API-TOKEN` 头。
 - 大模型请求必须带 `Authorization` 头。
 - 所有请求必须设 `timeout`。
 - 禁止向公网发起任何扫描、探测、攻击请求。
 
-### 6.3 人工确认
+### 6.3 人工确认与自动托管
 
 - 高危操作的确认必须通过 `input()` 阻塞，不接受默认值。
 - 确认提示必须清晰说明**将要执行什么操作**。
 - 用户输入非 `y` 时，一律视为拒绝。
+- 全自动托管模式默认关闭；Web 开启和 API 调用都必须完成显式二次确认。
+- 自动模式只能对 AI JSON 判定为“高”的 unknown 来源 IP 执行黑名单追加，且必须受单轮封禁上限约束。
 
 ### 6.4 输出约束
 
@@ -386,7 +415,7 @@ feat: 添加雷池攻击记录拉取
 - [ ] 所有网络请求有 timeout 和 raise_for_status
 - [ ] 无裸 except
 - [ ] 大模型输出解析失败有降级处理
-- [ ] 高危操作有人工确认
+- [ ] 默认模式高危操作有人工确认，自动模式具有显式确认与上限保护
 - [ ] 日志中无敏感信息
 - [ ] 单文件 ≤ 300 行，单函数 ≤ 50 行
 - [ ] 单元测试通过
@@ -401,11 +430,11 @@ feat: 添加雷池攻击记录拉取
 AI 在任何情况下都不得：
 
 1. 修改、逆向、反编译雷池任何文件。
-2. 自动执行封禁、删除、系统命令。
+2. 在未显式开启全自动托管模式时自动执行封禁，或自动执行删除、系统命令。
 3. 硬编码任何密钥、Token、密码。
 4. 向公网发起扫描或攻击请求。
 5. 将大模型自由文本作为唯一决策依据。
-6. 跳过人工确认直接执行高危操作。
+6. 跳过显式开关确认开启自动封禁，或绕过自动模式风险等级与数量上限。
 7. 引入本文件未列出的新依赖。
 8. 新增顶层目录或文件而不请求确认。
 9. 修改本文件定义的模块接口契约而不请求确认。
@@ -610,7 +639,9 @@ feat: 实现雷池攻击日志拉取
 - 所有 API 走 `/api/` 前缀；
 - 前端页面只调用后端 API，不直接调用雷池或大模型；
 - 密钥仍然只在 `.env`，后端读取，不暴露给前端。
+- 配置页允许修改白名单环境变量；API Token 和 API Key 只能覆盖，GET 响应只返回配置状态。
+- 全自动托管模式由 Web 开关控制，后台扫描必须做事件去重、失败重试和单轮封禁限流。
 
-**本文件版本：v1.0**
-**最后更新：项目启动日**
+**本文件版本：v1.1**
+**最后更新：v1.1 Web 配置与全自动托管开发日**
 **下次审阅：完成 MVP 后**

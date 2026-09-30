@@ -6,14 +6,7 @@ from typing import Any
 
 import requests
 
-from config import (
-    LLM_API_KEY,
-    LLM_API_URL,
-    LLM_MODEL,
-    LLM_PROXY,
-    LLM_VERIFY_SSL,
-    validate_llm_config,
-)
+import config
 
 logger = logging.getLogger(__name__)
 NO_PROXY = {"http": "", "https": ""}
@@ -43,8 +36,8 @@ RECORD_FIELDS = (
 
 def _proxy_settings() -> dict[str, str]:
     """返回大模型代理配置，空配置时绕过环境代理。"""
-    if LLM_PROXY:
-        return {"http": LLM_PROXY, "https": LLM_PROXY}
+    if config.LLM_PROXY:
+        return {"http": config.LLM_PROXY, "https": config.LLM_PROXY}
     return NO_PROXY
 
 
@@ -112,23 +105,23 @@ def analyze_unknown(record: dict) -> dict:
         ValueError: 配置缺失或模型输出不符合契约。
         LLMRequestError: 大模型服务连接或 HTTP 请求失败。
     """
-    validate_llm_config()
+    config.validate_llm_config()
     try:
         response = requests.post(
-            LLM_API_URL,
+            config.LLM_API_URL,
             headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
+                "Authorization": f"Bearer {config.LLM_API_KEY}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": LLM_MODEL,
+                "model": config.LLM_MODEL,
                 "messages": [{"role": "user", "content": _build_prompt(record)}],
                 "temperature": 0.2,
                 "response_format": {"type": "json_object"},
             },
             timeout=REQUEST_TIMEOUT,
             proxies=_proxy_settings(),
-            verify=LLM_VERIFY_SSL,
+            verify=config.LLM_VERIFY_SSL,
         )
         response.raise_for_status()
     except requests.RequestException as exc:

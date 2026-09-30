@@ -3,7 +3,6 @@
 const state = {
     records: [],
     labels: [],
-    reports: [],
 };
 
 /** 获取页面元素。 */
@@ -46,7 +45,9 @@ function formatTime(timestamp) {
 /** 创建表格单元格。 */
 function createCell(value, className = "") {
     const cell = document.createElement("td");
-    cell.textContent = value === undefined || value === null ? "-" : String(value);
+    const text = value === undefined || value === null ? "-" : String(value);
+    cell.textContent = text;
+    cell.title = text;
     if (className) {
         cell.className = className;
     }
@@ -217,84 +218,3 @@ async function blockIp(ip) {
         setStatus(error.message, true);
     }
 }
-
-/** 渲染报告文件列表。 */
-function renderReports(reports) {
-    const container = byId("reports-list");
-    container.replaceChildren();
-    byId("report-count").textContent = `${reports.length} 份`;
-    if (reports.length === 0) {
-        renderEmpty(container, "暂无报告");
-        return;
-    }
-    reports.forEach((report) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "report-item";
-        button.textContent = report.filename;
-        button.addEventListener("click", () => loadReport(report.filename, button));
-        container.appendChild(button);
-    });
-}
-
-/** 查看指定报告内容。 */
-async function loadReport(filename, button) {
-    setStatus(`正在读取报告：${filename}`);
-    try {
-        const data = await api(`/api/reports/${encodeURIComponent(filename)}`);
-        document.querySelectorAll(".report-item").forEach((item) => item.classList.remove("active"));
-        button.classList.add("active");
-        const viewer = byId("report-viewer");
-        viewer.replaceChildren();
-        viewer.textContent = data.content;
-        setStatus("报告加载完成");
-    } catch (error) {
-        setStatus(error.message, true);
-    }
-}
-
-/** 加载报告列表。 */
-async function loadReports() {
-    const data = await api("/api/reports");
-    state.reports = data.reports;
-    renderReports(state.reports);
-}
-
-/** 加载日志、分类统计和报告。 */
-async function loadDashboard() {
-    const refreshButton = byId("refresh-button");
-    refreshButton.disabled = true;
-    setStatus("正在加载数据");
-    const hours = byId("hours").value;
-    const pageSize = byId("page-size").value;
-    try {
-        const [recordsData, classifyData] = await Promise.all([
-            api(`/api/records?hours=${hours}&page=1&page_size=${pageSize}`),
-            api(`/api/classify?hours=${hours}&page=1&page_size=${pageSize}`),
-        ]);
-        state.records = recordsData.records;
-        state.labels = classifyData.details.map((detail) => detail.label);
-        renderRecords(state.records, state.labels);
-        renderStats(classifyData.counts);
-        await loadReports();
-        setStatus(`已加载 ${state.records.length} 条记录`);
-    } catch (error) {
-        setStatus(error.message, true);
-    } finally {
-        refreshButton.disabled = false;
-    }
-}
-
-/** 初始化页面事件。 */
-function init() {
-    byId("refresh-button").addEventListener("click", loadDashboard);
-    byId("block-form").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const input = byId("block-ip");
-        await blockIp(input.value.trim());
-        input.value = "";
-    });
-    loadDashboard();
-}
-
-document.addEventListener("DOMContentLoaded", init);

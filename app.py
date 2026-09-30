@@ -1,6 +1,8 @@
 """FastAPI Web GUI 后端。"""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 import ai_analyzer
+import config
+from automation import auto_mode_manager
 import classifier
 import safeline_api
 from config import BASE_DIR, REPORT_DIR
@@ -26,7 +30,18 @@ REPORT_ROOT = Path(REPORT_DIR)
 TEMPLATE_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="雷池哨兵 Web GUI", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """在 Web 服务生命周期内启停自动托管任务。"""
+    if config.AUTO_MODE_ENABLED:
+        await auto_mode_manager.start()
+    try:
+        yield
+    finally:
+        await auto_mode_manager.stop()
+
+
+app = FastAPI(title="雷池哨兵 Web GUI", version="1.1.0", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR), check_dir=False), name="static")
 
@@ -41,6 +56,19 @@ class BlockRequest(BaseModel):
     """黑名单追加请求体。"""
 
     ip: str = Field(..., min_length=1, description="待追加的 IP")
+
+
+class SettingsRequest(BaseModel):
+    """环境变量更新请求体。"""
+
+    settings: dict[str, Any] = Field(..., description="白名单环境变量键值")
+
+
+class AutoModeRequest(BaseModel):
+    """全自动托管开关请求体。"""
+
+    enabled: bool
+    confirm: bool = False
 
 
 def _ok(data: Any, message: str = "success") -> dict[str, Any]:
@@ -86,10 +114,9 @@ async def _unexpected_exception_handler(_: Request, exc: Exception) -> JSONRespo
     return _error("服务器内部错误", code=500, status_code=500)
 
 
-def _load_records(hours: int, page: int, page_size: int) -> list[dict]:
+def _load_records(hours: int, page: int, page_size: int) -> dict[str, Any]:
     """调用既有雷池封装拉取指定页记录。"""
-    return safeline_api.fetch_attack_records(
-        limit=page_size,
+    return safeline_api.fetch_attack_records_page(
         hours=hours,
         page=page,
         page_size=page_size,
@@ -121,7 +148,7 @@ def _report_files() -> list[dict[str, Any]]:
                 "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
             }
         )
-    return sorted(files, key=lambda item: item["modified_at"], reverse=True)
+    return sorted(files, key=lambda item: (item["modified_at"], item["filename"]), reverse=True)
 
 
 def _report_path(filename: str) -> Path:
@@ -157,8 +184,57 @@ def get_records(
     page_size: int = Query(100, ge=1, le=100),
 ) -> dict[str, Any]:
     """拉取雷池攻击日志。"""
-    records = _load_records(hours, page, page_size)
-    return _ok({"records": records, "hours": hours, "page": page, "page_size": page_size})
+    page_data = _load_records(hours, page, page_size)
+    return _ok({**page_data, "hours": hours})
+
+
+@app.get("/api/settings")
+def get_settings() -> dict[str, Any]:
+    """返回可公开修改的环境变量配置状态。"""
+    return _ok(config.public_settings())
+
+
+@app.put("/api/settings")
+def update_settings(payload: SettingsRequest) -> dict[str, Any]:
+    """校验并持久化 Web GUI 提交的环境变量。"""
+    if "AUTO_MODE_ENABLED" in payload.settings:
+        raise HTTPException(status_code=400, detail="请使用全自动托管接口修改开关")
+    try:
+        settings = config.update_settings(payload.settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok({"settings": settings, "restart_required": False})
+
+
+@app.get("/api/auto-mode")
+def get_auto_mode() -> dict[str, Any]:
+    """返回全自动托管模式状态。"""
+    return _ok(auto_mode_manager.status())
+
+
+@app.put("/api/auto-mode")
+async def set_auto_mode(payload: AutoModeRequest) -> dict[str, Any]:
+    """开启或关闭全自动托管模式。"""
+    if payload.enabled and not payload.confirm:
+        raise HTTPException(status_code=400, detail="开启全自动托管前必须二次确认")
+    try:
+        config.update_settings({"AUTO_MODE_ENABLED": payload.enabled})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.enabled:
+        status = await auto_mode_manager.start()
+    else:
+        status = await auto_mode_manager.stop()
+    return _ok(status)
+
+
+@app.post("/api/auto-mode/run")
+async def run_auto_mode() -> dict[str, Any]:
+    """立即执行一轮全自动扫描。"""
+    if not config.AUTO_MODE_ENABLED:
+        raise HTTPException(status_code=409, detail="全自动托管模式未开启")
+    result = await auto_mode_manager.run_once()
+    return _ok(result)
 
 
 @app.get("/api/classify")
@@ -168,8 +244,9 @@ def classify_records(
     page_size: int = Query(100, ge=1, le=100),
 ) -> dict[str, Any]:
     """分类统计雷池攻击记录。"""
-    records = _load_records(hours, page, page_size)
-    return _ok(_classify_records(records))
+    page_data = _load_records(hours, page, page_size)
+    result = _classify_records(page_data["records"])
+    return _ok({**result, "page": page_data["page"], "page_size": page_data["page_size"], "pages": page_data["pages"], "total": page_data["total"]})
 
 
 @app.post("/api/analyze", response_model=None)
@@ -190,10 +267,25 @@ def block_ip(payload: BlockRequest) -> dict[str, Any]:
 
 
 @app.get("/api/reports")
-def list_reports() -> dict[str, Any]:
+def list_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(6, ge=1, le=50),
+) -> dict[str, Any]:
     """列出 Markdown 报告。"""
     reports = _report_files()
-    return _ok({"reports": reports, "total": len(reports)})
+    total = len(reports)
+    pages = max(1, (total + page_size - 1) // page_size)
+    current_page = min(page, pages)
+    start = (current_page - 1) * page_size
+    return _ok(
+        {
+            "reports": reports[start : start + page_size],
+            "total": total,
+            "page": current_page,
+            "page_size": page_size,
+            "pages": pages,
+        }
+    )
 
 
 @app.get("/api/reports/{filename}")

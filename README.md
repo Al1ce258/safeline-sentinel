@@ -1,8 +1,8 @@
-# 雷池哨兵（SafeLine Sentinel）v1.0.0
+# 雷池哨兵（SafeLine Sentinel）v1.1.0
 
 > 基于长亭雷池社区版 Open API 的 AI 增强 WAF 审计与辅助决策 Agent。
 
-雷池哨兵不修改、不逆向雷池源码，只通过 Open API 获取攻击日志、复用雷池黑名单能力，并使用大模型辅助分析灰地带请求。AI 只提供研判建议，写入黑名单前仍由人工确认。
+雷池哨兵不修改、不逆向雷池源码，只通过 Open API 获取攻击日志、复用雷池黑名单能力，并使用大模型辅助分析灰地带请求。默认模式在写入黑名单前要求人工确认，也可由管理员显式开启受控的全自动托管模式。
 
 ## 核心能力
 
@@ -12,7 +12,11 @@
 - 严格校验大模型固定 JSON 输出，解析失败时记录原始输出并跳过。
 - 高危 unknown 记录经人工确认后追加到雷池黑名单 IP 组。
 - 生成可解释的 Markdown 审计报告。
+- 报告区支持分页浏览、每页数量切换和预览区联动。
 - 提供 FastAPI + Jinja2 原生 Web GUI。
+- Web GUI 使用深色安全运营控制台风格，并提供点阵地球防护拓扑可视化。
+- 支持在 Web GUI 中修改雷池、大模型和自动托管参数，密钥不会回显。
+- 支持可开关的全自动托管模式，自动完成 unknown 研判、高危封禁和报告写入。
 - 支持 CLI dry-run，便于无网络演示和自动化测试。
 
 ## 架构
@@ -30,11 +34,13 @@
    |-- classifier.py    规则预分类
    |-- ai_analyzer.py   unknown 大模型研判
    |-- app.py           FastAPI Web API
+   |-- config.py        动态环境配置与安全写回
+   |-- automation.py    全自动托管扫描与处置
    |-- report.py        Markdown 报告
    |-- main.py          CLI / Web 编排入口
    |
    v
-安全运营人员确认与审计
+人工确认或显式开启的全自动托管
 ```
 
 ## 技术栈
@@ -55,6 +61,7 @@
 safeline-sentinel/
 ├── app.py
 ├── main.py
+├── automation.py
 ├── config.py
 ├── safeline_api.py
 ├── classifier.py
@@ -65,9 +72,15 @@ safeline-sentinel/
 │   └── index.html
 ├── static/
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   ├── visuals.js
+│   ├── logs.js
+│   ├── reports.js
+│   └── settings.js
 ├── tests/
 │   ├── test_api.py
+│   ├── test_automation.py
+│   ├── test_config.py
 │   ├── test_analyzer.py
 │   ├── test_classifier.py
 │   ├── test_main.py
@@ -118,6 +131,11 @@ cp .env.example .env
 | `LLM_VERIFY_SSL` | 是否校验大模型 TLS 证书，默认 `true` |
 | `WEB_HOST` | Web 监听地址，默认 `127.0.0.1` |
 | `WEB_PORT` | Web 监听端口，默认 `8000` |
+| `AUTO_MODE_ENABLED` | 全自动托管开关，默认 `false` |
+| `AUTO_SCAN_INTERVAL_SECONDS` | 自动扫描间隔，默认 `60` 秒 |
+| `AUTO_LOOKBACK_HOURS` | 每轮日志回溯范围，默认 `24` 小时 |
+| `AUTO_MAX_RECORDS_PER_SCAN` | 单轮最多拉取记录数，默认 `100` |
+| `AUTO_MAX_BLOCKS_PER_SCAN` | 单轮最多自动封禁数，默认 `10` |
 
 `.env` 已被 `.gitignore` 排除，不要提交真实密钥。
 
@@ -163,25 +181,42 @@ python main.py --web --host 127.0.0.1 --port 8000
 
 ## Web GUI
 
-页面包含五个区块：
+页面包含七个区块：
 
-1. 攻击日志：展示来源 IP、域名、路径、风险等级、动作、规则 ID 和时间。
-2. 分类统计：展示 clean、malicious、unknown 数量。
-3. AI 研判：展示固定 JSON 的结构化卡片和证据列表。
-4. 黑名单：高危结果经确认后写入雷池黑名单组。
-5. 报告：列出并查看 `reports/` 中的 Markdown 文件。
+1. 运行配置：默认隐藏在顶部导航，点击「配置」展开后修改雷池地址、API Token、大模型 Key、Base URL、模型、黑名单组和自动扫描参数。
+2. 全自动托管：查看运行状态和最近统计，开启开关或立即执行一轮扫描。
+3. 攻击日志：展示来源 IP、域名、路径、风险等级、动作、规则 ID 和时间。
+   支持 10 / 20 / 50 条分页，并同步更新分类统计。
+4. 分类统计：展示 clean、malicious、unknown 数量。
+5. AI 研判：展示固定 JSON 的结构化卡片和证据列表。
+6. 黑名单：人工模式经确认、自动模式按策略写入雷池黑名单组。
+7. 报告：列出并查看 `reports/` 中的 Markdown 文件。
+
+### 界面设计
+
+- 使用深灰黑背景、蜜桃色强调和克制警示红，整体为现代暗黑科技风安全运营控制台。
+- 使用扁平化微边框卡片、紧凑栅格和高信息密度布局，适配桌面与移动端。
+- 自动托管区提供点阵地球防护拓扑可视化，展示防护节点和通信链路。
+- 运行配置默认收纳在顶部导航，点击「配置」按钮展开或收起。
+- 攻击日志固定为统一 `64px` 行高，超长字段自动省略并支持悬停查看完整值。
+- 攻击日志和报告均支持分页、每页数量切换和当前页联动。
 
 前端只调用后端 `/api/` 接口，不直接持有雷池或大模型密钥。
+
+全自动托管默认关闭。开启时页面和 API 都需要二次确认，后台只自动处置 AI 判定为“高”的 unknown 记录。
 
 ### Web API
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/api/records` | 按 `hours`、`page`、`page_size` 拉取攻击日志 |
-| GET | `/api/classify` | 返回分类计数和分类明细 |
+| GET | `/api/records` | 按 `hours`、`page`、`page_size` 分页拉取攻击日志 |
+| GET / PUT | `/api/settings` | 读取或更新白名单环境变量 |
+| GET / PUT | `/api/auto-mode` | 查看或切换全自动托管模式 |
+| POST | `/api/auto-mode/run` | 立即执行一轮自动扫描 |
+| GET | `/api/classify` | 返回当前页分类计数、明细和分页信息 |
 | POST | `/api/analyze` | 对 unknown 记录执行 AI 研判 |
 | POST | `/api/block` | 将指定 IP 追加到黑名单组 |
-| GET | `/api/reports` | 列出 Markdown 报告 |
+| GET | `/api/reports` | 按 `page`、`page_size` 分页列出 Markdown 报告 |
 | GET | `/api/reports/{filename}` | 读取指定报告内容 |
 
 所有 API 统一返回：
@@ -201,9 +236,10 @@ python main.py --web --host 127.0.0.1 --port 8000
 3. clean 记录跳过，malicious 记录保留审计结果。
 4. unknown 记录调用 `ai_analyzer.py`。
 5. 大模型必须返回固定 JSON：危险等级、攻击类型、证据、建议、建议规则。
-6. 高危 unknown 记录等待人工确认。
-7. 确认后调用 `POST /api/open/ipgroup/append` 追加黑名单。
-8. 生成 Markdown 报告，记录请求摘要、证据和处置结果。
+6. 默认模式：高危 unknown 记录等待人工确认。
+7. 全自动托管：对 AI 判定为“高”的 unknown 记录自动执行封禁，并通过事件 ID 去重。
+8. 调用 `POST /api/open/ipgroup/append` 追加黑名单。
+9. 生成 Markdown 报告，记录请求摘要、证据、处置模式和处置结果。
 
 ## 雷池 Open API 约定
 
@@ -227,7 +263,8 @@ X-SLCE-API-TOKEN: <token>
 - 不修改、不逆向、不反编译雷池源码。
 - 所有雷池交互只通过 Open API。
 - 密钥只从 `.env` 读取，不发送到前端。
-- 高危操作不自动执行，Web 使用确认对话框，CLI 使用 `input()`。
+- 默认模式高危操作不自动执行，Web 使用确认对话框，CLI 使用 `input()`。
+- 全自动托管默认关闭，开启需二次确认；仅封禁高危 unknown IP，并限制单轮封禁数量。
 - 自动化测试全部 mock 外部服务，不调用真实雷池或大模型。
 - 日志不会输出 API Token、密码或完整请求头。
 - `LLM_VERIFY_SSL` 默认保持 `true`。仅在受控本地代理环境下，才可按需关闭。
@@ -237,6 +274,8 @@ X-SLCE-API-TOKEN: <token>
 - 分类器目前以规则关键词为主，并非完整语义检测引擎。
 - AI 研判可能产生误报或漏报，不能替代安全人员决策。
 - 尚无数据库和历史事件聚合能力，报告以本地文件存储。
+- 全自动模式仍依赖 AI 研判准确率，生产使用前应先用告警模式评估误报并逐步放开。
+- Web GUI 当前无独立登录鉴权，默认只监听 `127.0.0.1`；如需对外提供服务，应在反向代理层增加认证和访问控制。
 - 演示数据来自本地隔离环境，尚未进行真实生产流量评估。
 - LLM 代理和证书配置与运行环境相关，需要按部署环境调整。
 
@@ -250,7 +289,8 @@ X-SLCE-API-TOKEN: <token>
 6. 对 unknown 记录点击「AI 研判」。
 7. 查看危险等级、攻击类型和证据。
 8. 对高危结果执行人工确认并写入黑名单。
-9. 在报告区查看 Markdown 审计报告。
+9. 如需演示自动托管，在运行配置中检查参数并开启开关，观察自动研判、封禁和报告结果。
+10. 在报告区查看 Markdown 审计报告。
 
 ## 常见问题
 
@@ -277,13 +317,16 @@ X-SLCE-API-TOKEN: <token>
 - 先运行 `python main.py --dry-run` 或在 Web 页面完成一次研判。
 - 确认 `reports/` 目录存在且可写。
 
-## v1.0.0 发布内容
+## v1.1.0 发布内容
 
-- 完成雷池 Open API 对接和兼容性处理。
-- 完成规则预分类和大模型固定 JSON 研判。
-- 完成人工确认、黑名单追加和 Markdown 报告闭环。
-- 完成 FastAPI Web GUI 和原生前端。
-- 完成 22 项自动化测试。
+- 新增 Web GUI 动态配置，可修改 API Token、API Key、Base URL 和自动托管参数。
+- 新增可开关的全自动托管模式，完成 unknown 研判、封禁、报告和状态持久化闭环。
+- 保留默认人工确认流程，并增加事件去重、失败重试和单轮封禁上限。
+- 保留 FastAPI Web GUI 和原生前端，新增运行配置与全自动托管面板。
+- Web GUI 重构为暗黑科技风，增加高密度数据卡片、点阵地球拓扑和响应式布局。
+- 攻击日志与报告均完成分页；攻击日志行高统一为 `64px`，长字段省略显示。
+- 运行配置收纳到顶部导航，支持展开、收起和状态记忆。
+- 自动化测试扩展至 32 项，覆盖动态配置、自动处置、日志与报告分页、限流和密钥脱敏。
 - 完成 CLI dry-run、Web 冒烟和真实大模型联调验证。
 
 ## 声明
