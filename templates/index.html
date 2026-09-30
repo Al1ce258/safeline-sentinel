@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
     <script src="{{ url_for('static', path='app.js') }}" defer></script>
+    <script src="{{ url_for('static', path='reports.js') }}" defer></script>
     <script src="{{ url_for('static', path='settings.js') }}" defer></script>
 </head>
 <body>
@@ -216,11 +217,32 @@
                 <span id="report-count" class="count-badge">0 份</span>
             </div>
             <div class="reports-layout">
-                <div id="reports-list" class="report-list">
-                    <p class="empty">暂无报告</p>
+                <div class="report-browser">
+                    <div id="reports-list" class="report-list">
+                        <p class="empty">暂无报告</p>
+                    </div>
+                    <footer class="report-pagination">
+                        <label class="page-size-control">
+                            每页
+                            <select id="report-page-size">
+                                <option value="6" selected>6</option>
+                                <option value="12">12</option>
+                                <option value="24">24</option>
+                            </select>
+                        </label>
+                        <div class="pagination-actions">
+                            <button id="report-prev" class="button ghost pager-button" type="button" aria-label="上一页">‹</button>
+                            <span id="report-page-label" class="page-label">第 1 / 1 页</span>
+                            <button id="report-next" class="button ghost pager-button" type="button" aria-label="下一页">›</button>
+                        </div>
+                    </footer>
                 </div>
                 <article id="report-viewer" class="report-viewer">
-                    <p class="empty">选择报告查看内容</p>
+                    <header class="report-viewer-header">
+                        <span>报告预览</span>
+                        <strong id="report-viewer-title">未选择</strong>
+                    </header>
+                    <pre id="report-content" class="report-content empty">选择报告查看内容</pre>
                 </article>
             </div>
         </section>

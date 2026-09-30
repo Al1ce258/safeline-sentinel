@@ -3,7 +3,6 @@
 const state = {
     records: [],
     labels: [],
-    reports: [],
 };
 
 /** 获取页面元素。 */
@@ -216,48 +215,6 @@ async function blockIp(ip) {
     } catch (error) {
         setStatus(error.message, true);
     }
-}
-
-/** 渲染报告文件列表。 */
-function renderReports(reports) {
-    const container = byId("reports-list");
-    container.replaceChildren();
-    byId("report-count").textContent = `${reports.length} 份`;
-    if (reports.length === 0) {
-        renderEmpty(container, "暂无报告");
-        return;
-    }
-    reports.forEach((report) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "report-item";
-        button.textContent = report.filename;
-        button.addEventListener("click", () => loadReport(report.filename, button));
-        container.appendChild(button);
-    });
-}
-
-/** 查看指定报告内容。 */
-async function loadReport(filename, button) {
-    setStatus(`正在读取报告：${filename}`);
-    try {
-        const data = await api(`/api/reports/${encodeURIComponent(filename)}`);
-        document.querySelectorAll(".report-item").forEach((item) => item.classList.remove("active"));
-        button.classList.add("active");
-        const viewer = byId("report-viewer");
-        viewer.replaceChildren();
-        viewer.textContent = data.content;
-        setStatus("报告加载完成");
-    } catch (error) {
-        setStatus(error.message, true);
-    }
-}
-
-/** 加载报告列表。 */
-async function loadReports() {
-    const data = await api("/api/reports");
-    state.reports = data.reports;
-    renderReports(state.reports);
 }
 
 /** 加载日志、分类统计和报告。 */

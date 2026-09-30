@@ -12,6 +12,7 @@
 - 严格校验大模型固定 JSON 输出，解析失败时记录原始输出并跳过。
 - 高危 unknown 记录经人工确认后追加到雷池黑名单 IP 组。
 - 生成可解释的 Markdown 审计报告。
+- 报告区支持分页浏览、每页数量切换和预览区联动。
 - 提供 FastAPI + Jinja2 原生 Web GUI。
 - 支持在 Web GUI 中修改雷池、大模型和自动托管参数，密钥不会回显。
 - 支持可开关的全自动托管模式，自动完成 unknown 研判、高危封禁和报告写入。
@@ -71,6 +72,7 @@ safeline-sentinel/
 ├── static/
 │   ├── style.css
 │   ├── app.js
+│   ├── reports.js
 │   └── settings.js
 ├── tests/
 │   ├── test_api.py
@@ -201,7 +203,7 @@ python main.py --web --host 127.0.0.1 --port 8000
 | GET | `/api/classify` | 返回分类计数和分类明细 |
 | POST | `/api/analyze` | 对 unknown 记录执行 AI 研判 |
 | POST | `/api/block` | 将指定 IP 追加到黑名单组 |
-| GET | `/api/reports` | 列出 Markdown 报告 |
+| GET | `/api/reports` | 按 `page`、`page_size` 分页列出 Markdown 报告 |
 | GET | `/api/reports/{filename}` | 读取指定报告内容 |
 
 所有 API 统一返回：
@@ -308,7 +310,7 @@ X-SLCE-API-TOKEN: <token>
 - 新增可开关的全自动托管模式，完成 unknown 研判、封禁、报告和状态持久化闭环。
 - 保留默认人工确认流程，并增加事件去重、失败重试和单轮封禁上限。
 - 保留 FastAPI Web GUI 和原生前端，新增运行配置与全自动托管面板。
-- 自动化测试扩展至 30 项，覆盖动态配置、自动处置、限流和密钥脱敏。
+- 自动化测试扩展至 31 项，覆盖动态配置、自动处置、报告分页、限流和密钥脱敏。
 - 完成 CLI dry-run、Web 冒烟和真实大模型联调验证。
 
 ## 声明

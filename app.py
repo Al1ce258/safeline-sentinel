@@ -149,7 +149,7 @@ def _report_files() -> list[dict[str, Any]]:
                 "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
             }
         )
-    return sorted(files, key=lambda item: item["modified_at"], reverse=True)
+    return sorted(files, key=lambda item: (item["modified_at"], item["filename"]), reverse=True)
 
 
 def _report_path(filename: str) -> Path:
@@ -267,10 +267,25 @@ def block_ip(payload: BlockRequest) -> dict[str, Any]:
 
 
 @app.get("/api/reports")
-def list_reports() -> dict[str, Any]:
+def list_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(6, ge=1, le=50),
+) -> dict[str, Any]:
     """列出 Markdown 报告。"""
     reports = _report_files()
-    return _ok({"reports": reports, "total": len(reports)})
+    total = len(reports)
+    pages = max(1, (total + page_size - 1) // page_size)
+    current_page = min(page, pages)
+    start = (current_page - 1) * page_size
+    return _ok(
+        {
+            "reports": reports[start : start + page_size],
+            "total": total,
+            "page": current_page,
+            "page_size": page_size,
+            "pages": pages,
+        }
+    )
 
 
 @app.get("/api/reports/{filename}")

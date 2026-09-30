@@ -175,10 +175,31 @@ def test_reports_api_lists_and_reads_markdown(monkeypatch, client: TestClient, r
 
     assert listing.status_code == 200
     assert listing.json()["data"]["total"] == 2
+    assert listing.json()["data"]["page"] == 1
+    assert listing.json()["data"]["pages"] == 1
     assert detail.status_code == 200
     assert detail.json()["data"]["content"] == "# 报告一"
     assert missing.status_code == 404
     assert missing.json()["code"] == 404
+
+
+def test_reports_api_paginates_markdown_files(monkeypatch, client: TestClient, report_dir: Path) -> None:
+    """报告 API 应按页返回文件并保留总数。"""
+    for index in range(7):
+        (report_dir / f"report-{index}.md").write_text(f"# 报告 {index}", encoding="utf-8")
+    monkeypatch.setattr(app, "REPORT_ROOT", report_dir)
+
+    first = client.get("/api/reports?page=1&page_size=3")
+    third = client.get("/api/reports?page=3&page_size=3")
+
+    assert first.status_code == 200
+    first_data = first.json()["data"]
+    assert first_data["total"] == 7
+    assert first_data["pages"] == 3
+    assert first_data["page"] == 1
+    assert len(first_data["reports"]) == 3
+    assert third.json()["data"]["page"] == 3
+    assert len(third.json()["data"]["reports"]) == 1
 
 
 def test_settings_api_updates_whitelisted_values(monkeypatch, client: TestClient) -> None:
