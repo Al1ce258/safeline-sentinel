@@ -7,15 +7,19 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
     <script src="{{ url_for('static', path='app.js') }}" defer></script>
+    <script src="{{ url_for('static', path='visuals.js') }}" defer></script>
     <script src="{{ url_for('static', path='logs.js') }}" defer></script>
     <script src="{{ url_for('static', path='reports.js') }}" defer></script>
     <script src="{{ url_for('static', path='settings.js') }}" defer></script>
 </head>
 <body>
     <header class="topbar">
-        <div>
-            <p class="eyebrow">SAFELINE SENTINEL</p>
-            <h1>雷池哨兵控制台</h1>
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">SL</span>
+            <div>
+                <p class="eyebrow">SAFELINE SENTINEL</p>
+                <h1>安全运营控制台</h1>
+            </div>
         </div>
         <div class="toolbar">
             <label>
@@ -113,11 +117,21 @@
                 </div>
             </div>
             <div id="auto-mode-summary" class="automation-summary">
-                <span>状态 <strong id="auto-running">停止</strong></span>
-                <span>最近扫描 <strong id="auto-last-run">-</strong></span>
-                <span>研判 <strong id="auto-analyzed">0</strong></span>
-                <span>封禁 <strong id="auto-blocked">0</strong></span>
-                <span>错误 <strong id="auto-errors">0</strong></span>
+            <div class="automation-grid">
+                <div id="auto-mode-summary" class="automation-summary">
+                    <article class="automation-metric"><span>引擎状态</span><strong id="auto-running">停止</strong></article>
+                    <article class="automation-metric"><span>最近扫描</span><strong id="auto-last-run">-</strong></article>
+                    <article class="automation-metric"><span>AI 研判</span><strong id="auto-analyzed">0</strong></article>
+                    <article class="automation-metric accent"><span>自动封禁</span><strong id="auto-blocked">0</strong></article>
+                    <article class="automation-metric"><span>异常</span><strong id="auto-errors">0</strong></article>
+                </div>
+                <div class="globe-card">
+                    <canvas id="network-globe" class="network-globe" aria-hidden="true"></canvas>
+                    <div class="globe-readout">
+                        <span>THREAT TOPOLOGY</span>
+                        <strong>实时防护节点</strong>
+                    </div>
+                </div>
             </div>
         </section>
 

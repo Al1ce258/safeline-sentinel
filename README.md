@@ -14,6 +14,7 @@
 - 生成可解释的 Markdown 审计报告。
 - 报告区支持分页浏览、每页数量切换和预览区联动。
 - 提供 FastAPI + Jinja2 原生 Web GUI。
+- Web GUI 使用深色安全运营控制台风格，并提供点阵地球防护拓扑可视化。
 - 支持在 Web GUI 中修改雷池、大模型和自动托管参数，密钥不会回显。
 - 支持可开关的全自动托管模式，自动完成 unknown 研判、高危封禁和报告写入。
 - 支持 CLI dry-run，便于无网络演示和自动化测试。
@@ -72,6 +73,7 @@ safeline-sentinel/
 ├── static/
 │   ├── style.css
 │   ├── app.js
+│   ├── visuals.js
 │   ├── logs.js
 │   ├── reports.js
 │   └── settings.js
