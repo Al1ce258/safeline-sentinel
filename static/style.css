@@ -85,11 +85,13 @@ th { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
 .reports-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 18px; align-items: start; }
 .report-browser { display: grid; gap: 12px; min-width: 0; }
 .report-list { display: grid; align-content: start; gap: 7px; max-height: 390px; overflow-y: auto; padding-right: 3px; }
-.report-item { display: grid; gap: 5px; width: 100%; min-height: 60px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid transparent; border-radius: 6px; background: #f8fafb; color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s ease, background .15s ease; }
+.report-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name time" "name size"; column-gap: 10px; row-gap: 3px; align-content: center; width: 100%; min-height: 64px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid transparent; border-radius: 6px; background: #f8fafb; color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s ease, background .15s ease; }
 .report-item:hover { border-color: #9eb9bb; background: #f1f7f7; }
 .report-item.active { border-color: var(--teal); border-left-color: var(--teal); background: var(--teal-soft); }
-.report-file-name { overflow-wrap: anywhere; font-family: Consolas, "Courier New", monospace; font-size: .82rem; }
-.report-meta { color: var(--muted); font-size: .74rem; }
+.report-file-name { grid-area: name; display: -webkit-box; align-self: center; overflow: hidden; overflow-wrap: anywhere; font-family: Consolas, "Courier New", monospace; font-size: .82rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.report-time, .report-size { color: var(--muted); font-size: .72rem; line-height: 1.25; text-align: right; white-space: nowrap; }
+.report-time { grid-area: time; }
+.report-size { grid-area: size; }
 .report-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .page-size-control { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .78rem; font-weight: 700; }
 .page-size-control select { min-height: 32px; padding: 4px 26px 4px 8px; }

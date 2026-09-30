@@ -78,6 +78,7 @@
             button.type = "button";
             button.className = "report-item";
             button.dataset.filename = report.filename;
+            button.title = report.filename;
             button.setAttribute("aria-pressed", String(report.filename === state.currentFilename));
             if (report.filename === state.currentFilename) {
                 button.classList.add("active");
@@ -85,10 +86,14 @@
             const name = document.createElement("strong");
             name.className = "report-file-name";
             name.textContent = report.filename;
-            const meta = document.createElement("span");
-            meta.className = "report-meta";
-            meta.textContent = `${formatModified(report.modified_at)} · ${formatSize(report.size)}`;
-            button.append(name, meta);
+            const modified = document.createElement("time");
+            modified.className = "report-time";
+            modified.dateTime = report.modified_at;
+            modified.textContent = formatModified(report.modified_at);
+            const size = document.createElement("span");
+            size.className = "report-size";
+            size.textContent = formatSize(report.size);
+            button.append(name, modified, size);
             button.addEventListener("click", () => openReport(report.filename));
             container.appendChild(button);
         });
