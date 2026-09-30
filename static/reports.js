@@ -136,20 +136,43 @@
     }
 
     /** 加载指定分页的报告列表。 */
+    function normalizeReportData(data, requestedPage) {
+        const sourceReports = Array.isArray(data.reports) ? data.reports : [];
+        const totalValue = Number(data.total);
+        const total = Number.isFinite(totalValue) ? totalValue : sourceReports.length;
+        const serverPage = Number(data.page);
+        const serverPages = Number(data.pages);
+        const serverPageSize = Number(data.page_size);
+        const serverPaginated = Number.isInteger(serverPage)
+            && Number.isInteger(serverPages)
+            && Number.isInteger(serverPageSize);
+        const pageSize = serverPaginated ? serverPageSize : state.pageSize;
+        const pages = serverPaginated ? serverPages : Math.max(1, Math.ceil(total / pageSize));
+        const page = serverPaginated
+            ? serverPage
+            : Math.min(Math.max(1, Number(requestedPage) || 1), pages);
+        const reports = serverPaginated
+            ? sourceReports
+            : sourceReports.slice((page - 1) * pageSize, page * pageSize);
+        return {reports, total, page, pages, pageSize};
+    }
+
     async function loadReports(page = state.page) {
         const data = await request(`/api/reports?page=${page}&page_size=${state.pageSize}`);
-        state.page = data.page;
-        state.pages = data.pages;
-        state.total = data.total;
-        renderFileList(data.reports);
+        const normalized = normalizeReportData(data, page);
+        state.page = normalized.page;
+        state.pages = normalized.pages;
+        state.total = normalized.total;
+        state.pageSize = normalized.pageSize;
+        renderFileList(normalized.reports);
         updatePagination();
         if (state.total === 0) {
             clearViewer();
             return;
         }
-        const currentVisible = data.reports.some((item) => item.filename === state.currentFilename);
+        const currentVisible = normalized.reports.some((item) => item.filename === state.currentFilename);
         if (!currentVisible) {
-            await openReport(data.reports[0].filename);
+            await openReport(normalized.reports[0].filename);
         } else {
             activateFile(state.currentFilename);
         }
@@ -165,7 +188,6 @@
         });
         element("report-page-size").addEventListener("change", (event) => {
             state.pageSize = Number(event.target.value);
-            renderFileList([]);
             loadReports(1).catch((error) => setStatus(error.message, true));
         });
         loadReports(1).catch((error) => setStatus(error.message, true));
