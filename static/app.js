@@ -45,7 +45,9 @@ function formatTime(timestamp) {
 /** 创建表格单元格。 */
 function createCell(value, className = "") {
     const cell = document.createElement("td");
-    cell.textContent = value === undefined || value === null ? "-" : String(value);
+    const text = value === undefined || value === null ? "-" : String(value);
+    cell.textContent = text;
+    cell.title = text;
     if (className) {
         cell.className = className;
     }

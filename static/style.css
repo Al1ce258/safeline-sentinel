@@ -51,10 +51,20 @@ select, input { padding: 7px 10px; background: var(--surface); color: var(--ink)
 .status.error { color: var(--red); }
 
 .table-wrap { overflow-x: auto; }
-table { width: 100%; min-width: 920px; border-collapse: collapse; font-size: .86rem; }
-th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table { width: 100%; min-width: 920px; border-collapse: collapse; table-layout: fixed; font-size: .86rem; }
+th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 th { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
-.path-cell { max-width: 340px; overflow-wrap: anywhere; }
+th:nth-child(1) { width: 12%; }
+th:nth-child(2) { width: 11%; }
+th:nth-child(3) { width: 27%; }
+th:nth-child(4) { width: 8%; }
+th:nth-child(5) { width: 9%; }
+th:nth-child(6) { width: 9%; }
+th:nth-child(7) { width: 14%; }
+th:nth-child(8) { width: 10%; }
+#records-body tr { height: 64px; }
+#records-body td { height: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.path-cell { max-width: none; overflow: hidden; overflow-wrap: normal; text-overflow: ellipsis; white-space: nowrap; }
 .empty { margin: 0; padding: 18px 0; color: var(--muted); text-align: center; }
 .tag { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; }
 .tag.blocked { background: var(--green-soft); color: var(--green); }
