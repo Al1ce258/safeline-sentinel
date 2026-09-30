@@ -169,7 +169,34 @@
     }
 
     /** 初始化配置和自动托管交互。 */
+    function setSettingsOpen(open) {
+        const panel = element("settings-panel");
+        const toggle = element("settings-toggle");
+        panel.hidden = !open;
+        toggle.classList.toggle("active", open);
+        toggle.setAttribute("aria-expanded", String(open));
+        try {
+            window.localStorage.setItem("sentinel.settings.open", String(open));
+        } catch (error) {
+            return;
+        }
+    }
+
+    function initSettingsVisibility() {
+        let open = false;
+        try {
+            open = window.localStorage.getItem("sentinel.settings.open") === "true";
+        } catch (error) {
+            open = false;
+        }
+        setSettingsOpen(open);
+        element("settings-toggle").addEventListener("click", () => {
+            setSettingsOpen(element("settings-panel").hidden);
+        });
+    }
+
     function initSettingsPanel() {
+        initSettingsVisibility();
         element("settings-form").addEventListener("submit", saveSettings);
         element("auto-mode-toggle").addEventListener("change", toggleAutoMode);
         element("run-auto-button").addEventListener("click", runAutoMode);

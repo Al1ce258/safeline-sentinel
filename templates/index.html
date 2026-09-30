@@ -34,6 +34,7 @@
                     <option value="100" selected>100</option>
                 </select>
             </label>
+            <button id="settings-toggle" class="button ghost" type="button" aria-expanded="false" aria-controls="settings-panel">配置</button>
             <button id="refresh-button" class="button primary" type="button">刷新数据</button>
         </div>
     </header>
@@ -41,7 +42,7 @@
     <main class="layout">
         <p id="global-status" class="status" role="status"></p>
 
-        <section class="panel wide" aria-labelledby="settings-title">
+        <section id="settings-panel" class="panel wide" aria-labelledby="settings-title" hidden>
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">01 / ENVIRONMENT</p>
