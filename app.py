@@ -114,10 +114,9 @@ async def _unexpected_exception_handler(_: Request, exc: Exception) -> JSONRespo
     return _error("服务器内部错误", code=500, status_code=500)
 
 
-def _load_records(hours: int, page: int, page_size: int) -> list[dict]:
+def _load_records(hours: int, page: int, page_size: int) -> dict[str, Any]:
     """调用既有雷池封装拉取指定页记录。"""
-    return safeline_api.fetch_attack_records(
-        limit=page_size,
+    return safeline_api.fetch_attack_records_page(
         hours=hours,
         page=page,
         page_size=page_size,
@@ -185,8 +184,8 @@ def get_records(
     page_size: int = Query(100, ge=1, le=100),
 ) -> dict[str, Any]:
     """拉取雷池攻击日志。"""
-    records = _load_records(hours, page, page_size)
-    return _ok({"records": records, "hours": hours, "page": page, "page_size": page_size})
+    page_data = _load_records(hours, page, page_size)
+    return _ok({**page_data, "hours": hours})
 
 
 @app.get("/api/settings")
@@ -245,8 +244,9 @@ def classify_records(
     page_size: int = Query(100, ge=1, le=100),
 ) -> dict[str, Any]:
     """分类统计雷池攻击记录。"""
-    records = _load_records(hours, page, page_size)
-    return _ok(_classify_records(records))
+    page_data = _load_records(hours, page, page_size)
+    result = _classify_records(page_data["records"])
+    return _ok({**result, "page": page_data["page"], "page_size": page_data["page_size"], "pages": page_data["pages"], "total": page_data["total"]})
 
 
 @app.post("/api/analyze", response_model=None)

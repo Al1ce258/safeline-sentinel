@@ -1,6 +1,6 @@
 """safeline_api 模块测试。"""
 
-from safeline_api import add_ip_to_blacklist, fetch_attack_records
+from safeline_api import add_ip_to_blacklist, fetch_attack_records, fetch_attack_records_page
 
 
 class FakeResponse:
@@ -79,6 +79,28 @@ def test_fetch_attack_records_falls_back_to_milliseconds(monkeypatch) -> None:
     assert fetch_attack_records(limit=1) == [{"event_id": "one"}]
     assert calls[1]["start"] == calls[0]["start"] * 1000
     assert calls[1]["end"] == calls[0]["end"] * 1000
+
+
+def test_fetch_attack_records_page_returns_metadata(monkeypatch) -> None:
+    """分页拉取应返回总数、页码和总页数。"""
+    import safeline_api as api
+
+    records = [{"event_id": f"event-{index}"} for index in range(20)]
+    monkeypatch.setattr(api.config, "SAFELINE_BASE_URL", "https://waf.example.test")
+    monkeypatch.setattr(api.config, "SAFELINE_API_TOKEN", "test-token")
+    monkeypatch.setattr(
+        api.requests,
+        "request",
+        lambda *args, **kwargs: FakeResponse({"data": {"data": records, "total": 45}, "err": None}),
+    )
+
+    result = fetch_attack_records_page(hours=6, page=2, page_size=20)
+
+    assert result["total"] == 45
+    assert result["page"] == 2
+    assert result["page_size"] == 20
+    assert result["pages"] == 3
+    assert len(result["records"]) == 20
 
 
 def test_add_ip_to_blacklist_uses_append_endpoint(monkeypatch) -> None:

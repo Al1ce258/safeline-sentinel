@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
     <script src="{{ url_for('static', path='app.js') }}" defer></script>
+    <script src="{{ url_for('static', path='logs.js') }}" defer></script>
     <script src="{{ url_for('static', path='reports.js') }}" defer></script>
     <script src="{{ url_for('static', path='settings.js') }}" defer></script>
 </head>
@@ -24,14 +25,6 @@
                     <option value="6">最近 6 小时</option>
                     <option value="24" selected>最近 24 小时</option>
                     <option value="168">最近 7 天</option>
-                </select>
-            </label>
-            <label>
-                每页条数
-                <select id="page-size">
-                    <option value="20">20</option>
-                    <option value="50">50</option>
-                    <option value="100" selected>100</option>
                 </select>
             </label>
             <button id="settings-toggle" class="button ghost" type="button" aria-expanded="false" aria-controls="settings-panel">配置</button>
@@ -131,7 +124,7 @@
         <section class="panel wide" aria-labelledby="logs-title">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">01 / ATTACK LOGS</p>
+                    <p class="eyebrow">03 / ATTACK LOGS</p>
                     <h2 id="logs-title">攻击日志</h2>
                 </div>
                 <span id="record-count" class="count-badge">0 条</span>
@@ -155,12 +148,27 @@
                     </tbody>
                 </table>
             </div>
+            <footer class="log-pagination">
+                <label class="page-size-control">
+                    每页
+                    <select id="log-page-size">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                    </select>
+                </label>
+                <div class="pagination-actions">
+                    <button id="log-prev" class="button ghost pager-button" type="button" aria-label="上一页">‹</button>
+                    <span id="log-page-label" class="page-label">第 1 / 1 页</span>
+                    <button id="log-next" class="button ghost pager-button" type="button" aria-label="下一页">›</button>
+                </div>
+            </footer>
         </section>
 
         <section class="panel" aria-labelledby="stats-title">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">02 / CLASSIFICATION</p>
+                    <p class="eyebrow">04 / CLASSIFICATION</p>
                     <h2 id="stats-title">分类统计</h2>
                 </div>
             </div>
@@ -183,7 +191,7 @@
         <section class="panel" aria-labelledby="analysis-title">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">03 / AI ANALYSIS</p>
+                    <p class="eyebrow">05 / AI ANALYSIS</p>
                     <h2 id="analysis-title">AI 研判</h2>
                 </div>
             </div>
@@ -195,7 +203,7 @@
         <section class="panel" aria-labelledby="blacklist-title">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">04 / BLACKLIST</p>
+                    <p class="eyebrow">06 / BLACKLIST</p>
                     <h2 id="blacklist-title">黑名单</h2>
                 </div>
             </div>
@@ -212,7 +220,7 @@
         <section class="panel wide" aria-labelledby="reports-title">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">05 / REPORTS</p>
+                    <p class="eyebrow">07 / REPORTS</p>
                     <h2 id="reports-title">报告</h2>
                 </div>
                 <span id="report-count" class="count-badge">0 份</span>

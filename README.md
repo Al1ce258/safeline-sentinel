@@ -72,6 +72,7 @@ safeline-sentinel/
 ├── static/
 │   ├── style.css
 │   ├── app.js
+│   ├── logs.js
 │   ├── reports.js
 │   └── settings.js
 ├── tests/
@@ -183,6 +184,7 @@ python main.py --web --host 127.0.0.1 --port 8000
 1. 运行配置：默认隐藏在顶部导航，点击「配置」展开后修改雷池地址、API Token、大模型 Key、Base URL、模型、黑名单组和自动扫描参数。
 2. 全自动托管：查看运行状态和最近统计，开启开关或立即执行一轮扫描。
 3. 攻击日志：展示来源 IP、域名、路径、风险等级、动作、规则 ID 和时间。
+   支持 10 / 20 / 50 条分页，并同步更新分类统计。
 4. 分类统计：展示 clean、malicious、unknown 数量。
 5. AI 研判：展示固定 JSON 的结构化卡片和证据列表。
 6. 黑名单：人工模式经确认、自动模式按策略写入雷池黑名单组。
@@ -196,11 +198,11 @@ python main.py --web --host 127.0.0.1 --port 8000
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/api/records` | 按 `hours`、`page`、`page_size` 拉取攻击日志 |
+| GET | `/api/records` | 按 `hours`、`page`、`page_size` 分页拉取攻击日志 |
 | GET / PUT | `/api/settings` | 读取或更新白名单环境变量 |
 | GET / PUT | `/api/auto-mode` | 查看或切换全自动托管模式 |
 | POST | `/api/auto-mode/run` | 立即执行一轮自动扫描 |
-| GET | `/api/classify` | 返回分类计数和分类明细 |
+| GET | `/api/classify` | 返回当前页分类计数、明细和分页信息 |
 | POST | `/api/analyze` | 对 unknown 记录执行 AI 研判 |
 | POST | `/api/block` | 将指定 IP 追加到黑名单组 |
 | GET | `/api/reports` | 按 `page`、`page_size` 分页列出 Markdown 报告 |
@@ -310,7 +312,7 @@ X-SLCE-API-TOKEN: <token>
 - 新增可开关的全自动托管模式，完成 unknown 研判、封禁、报告和状态持久化闭环。
 - 保留默认人工确认流程，并增加事件去重、失败重试和单轮封禁上限。
 - 保留 FastAPI Web GUI 和原生前端，新增运行配置与全自动托管面板。
-- 自动化测试扩展至 31 项，覆盖动态配置、自动处置、报告分页、限流和密钥脱敏。
+- 自动化测试扩展至 32 项，覆盖动态配置、自动处置、日志与报告分页、限流和密钥脱敏。
 - 完成 CLI dry-run、Web 冒烟和真实大模型联调验证。
 
 ## 声明

@@ -170,6 +170,9 @@ Web GUI 可通过 `update_settings()` 更新白名单环境变量；密钥字段
 def fetch_attack_records(limit: int = 100) -> list[dict]:
     """拉取雷池攻击记录。返回列表，失败时抛出异常。"""
 
+def fetch_attack_records_page(hours: int = 24, page: int = 1, page_size: int = 20) -> dict:
+    """按页拉取雷池攻击记录并返回 records/total/page/page_size/pages。"""
+
 def add_ip_to_blacklist(ip: str) -> bool:
     """将 IP 写入雷池黑名单组。成功返回 True。"""
 ```

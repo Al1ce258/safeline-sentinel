@@ -144,6 +144,43 @@ def fetch_attack_records(
     return records[:limit]
 
 
+def fetch_attack_records_page(
+    hours: int = DEFAULT_LOOKBACK_HOURS,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    """按页拉取雷池攻击记录并返回分页信息。
+
+    参数：
+        hours: 回溯小时数。
+        page: 页码，从 1 开始。
+        page_size: 单页条数，最大 100。
+    返回：
+        含 `records`、`total`、`page`、`page_size`、`pages` 的字典。
+    异常：
+        ValueError: 配置或分页参数无效。
+        requests.RequestException: 网络请求失败。
+        RuntimeError: 雷池返回错误。
+    """
+    if hours <= 0 or page <= 0 or page_size <= 0:
+        raise ValueError("hours、page 和 page_size 必须大于 0")
+    config.validate_safeline_config()
+    size = min(max(page_size, 1), MAX_PAGE_SIZE)
+    now = int(time.time())
+    payload, batch = _fetch_records_page(now - hours * 3600, now, page, size)
+    data = payload.get("data")
+    raw_total = data.get("total") if isinstance(data, dict) else None
+    total = raw_total if isinstance(raw_total, int) and raw_total >= 0 else (page - 1) * size + len(batch)
+    pages = max(1, (total + size - 1) // size)
+    return {
+        "records": batch[:size],
+        "total": total,
+        "page": min(page, pages),
+        "page_size": size,
+        "pages": pages,
+    }
+
+
 def get_or_create_blacklist_group() -> int:
     """获取雷池黑名单组 ID，不存在时创建。"""
     payload = _request_json("GET", "/api/open/ipgroup")

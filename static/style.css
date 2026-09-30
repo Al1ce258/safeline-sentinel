@@ -92,7 +92,8 @@ th { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
 .report-time, .report-size { color: var(--muted); font-size: .72rem; line-height: 1.25; text-align: right; white-space: nowrap; }
 .report-time { grid-area: time; }
 .report-size { grid-area: size; }
-.report-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.report-pagination, .log-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.log-pagination { margin-top: 14px; }
 .page-size-control { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .78rem; font-weight: 700; }
 .page-size-control select { min-height: 32px; padding: 4px 26px 4px 8px; }
 .pagination-actions { display: flex; align-items: center; gap: 8px; }
@@ -136,7 +137,7 @@ th { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
     .layout, .reports-layout { grid-template-columns: 1fr; }
     .report-list { max-height: 280px; }
     .report-viewer { min-height: 260px; max-height: 480px; }
-    .report-pagination { align-items: stretch; flex-direction: column; }
+    .report-pagination, .log-pagination { align-items: stretch; flex-direction: column; }
     .page-size-control, .pagination-actions { justify-content: space-between; }
     .stats-grid { grid-template-columns: 1fr; }
     .inline-form { grid-template-columns: 1fr; }

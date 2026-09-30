@@ -42,12 +42,12 @@ def test_records_api_uses_fetch_arguments(monkeypatch, client: TestClient) -> No
     """日志 API 应传递 hours、page、page_size 并返回统一结构。"""
     calls = []
 
-    def fake_fetch(*, limit: int, hours: int, page: int, page_size: int) -> list[dict]:
+    def fake_fetch(*, hours: int, page: int, page_size: int) -> dict:
         """记录参数并返回固定记录。"""
-        calls.append((limit, hours, page, page_size))
-        return _records()[:1]
+        calls.append((hours, page, page_size))
+        return {"records": _records()[:1], "total": 1, "page": page, "page_size": page_size, "pages": 1}
 
-    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records_page", fake_fetch)
 
     response = client.get("/api/records?hours=6&page=2&page_size=20")
 
@@ -55,16 +55,18 @@ def test_records_api_uses_fetch_arguments(monkeypatch, client: TestClient) -> No
     body = response.json()
     assert body["code"] == 0
     assert body["data"]["records"][0]["event_id"] == "clean"
-    assert calls == [(20, 6, 2, 20)]
+    assert calls == [(6, 2, 20)]
+    assert body["data"]["page"] == 2
+    assert body["data"]["pages"] == 1
 
 
 def test_records_api_returns_unified_upstream_error(monkeypatch, client: TestClient) -> None:
     """雷池不可达时刷新接口应返回明确统一错误。"""
-    def fake_fetch(**kwargs: object) -> list[dict]:
+    def fake_fetch(**kwargs: object) -> dict:
         """模拟雷池连接失败。"""
         raise requests.ConnectionError("upstream unavailable")
 
-    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records_page", fake_fetch)
 
     response = client.get("/api/records")
 
@@ -80,9 +82,9 @@ def test_classify_api_returns_counts_and_details(monkeypatch, client: TestClient
     """分类 API 应返回三类计数与逐条明细。"""
     def fake_fetch(**kwargs: object) -> list[dict]:
         """返回固定三类记录。"""
-        return _records()
+        return {"records": _records(), "total": 3, "page": 1, "page_size": 100, "pages": 1}
 
-    monkeypatch.setattr(app.safeline_api, "fetch_attack_records", fake_fetch)
+    monkeypatch.setattr(app.safeline_api, "fetch_attack_records_page", fake_fetch)
 
     response = client.get("/api/classify?hours=24&page=1&page_size=100")
 
