@@ -25,9 +25,9 @@ def _mock_llm(monkeypatch, content: str) -> None:
     """替换大模型请求，返回指定 content。"""
     import ai_analyzer as analyzer
 
-    monkeypatch.setattr(analyzer, "LLM_API_KEY", "test-key")
-    monkeypatch.setattr(analyzer, "LLM_API_URL", "https://llm.example.test/chat")
-    monkeypatch.setattr(analyzer, "LLM_MODEL", "test-model")
+    monkeypatch.setattr(analyzer.config, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(analyzer.config, "LLM_API_URL", "https://llm.example.test/chat")
+    monkeypatch.setattr(analyzer.config, "LLM_MODEL", "test-model")
     monkeypatch.setattr(
         analyzer.requests,
         "post",

@@ -37,13 +37,14 @@ def _record_summary(record: dict) -> dict:
     return {key: record.get(key) for key in REPORT_FIELDS if key in record}
 
 
-def _build_markdown(record: dict, result: dict, blocked: bool) -> str:
+def _build_markdown(record: dict, result: dict, blocked: bool, mode: str) -> str:
     """构造 Markdown 报告正文。"""
     record_json = json.dumps(_record_summary(record), ensure_ascii=False, indent=2)
     result_json = json.dumps(result, ensure_ascii=False, indent=2)
     return (
         "# 雷池哨兵安全事件报告\n\n"
         f"- 生成时间：{datetime.now().isoformat(timespec='seconds')}\n"
+        f"- 处置模式：{'全自动托管' if mode == 'auto' else '人工确认'}\n"
         f"- 来源 IP：{record.get('src_ip', '未知')}\n"
         f"- 是否写入黑名单：{'是' if blocked else '否'}\n\n"
         "## 原始请求摘要\n\n"
@@ -53,13 +54,14 @@ def _build_markdown(record: dict, result: dict, blocked: bool) -> str:
     )
 
 
-def write_report(record: dict, result: dict, blocked: bool) -> str:
+def write_report(record: dict, result: dict, blocked: bool, mode: str = "manual") -> str:
     """写入 Markdown 报告并返回文件路径。
 
     参数：
         record: 原始雷池记录。
         result: 结构化研判结果。
         blocked: 本次处置是否已写入黑名单。
+        mode: 处置模式，`auto` 表示全自动托管，其他值表示人工确认。
     返回：
         报告文件的绝对路径。
     异常：
@@ -70,6 +72,6 @@ def write_report(record: dict, result: dict, blocked: bool) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     event_id = _safe_identifier(record.get("event_id"))
     path = report_dir / f"report_{timestamp}_{event_id}.md"
-    path.write_text(_build_markdown(record, result, blocked), encoding="utf-8")
+    path.write_text(_build_markdown(record, result, blocked, mode), encoding="utf-8")
     logger.info("报告已写入：%s", path.resolve())
     return str(path.resolve())

@@ -179,3 +179,54 @@ def test_reports_api_lists_and_reads_markdown(monkeypatch, client: TestClient, r
     assert detail.json()["data"]["content"] == "# 报告一"
     assert missing.status_code == 404
     assert missing.json()["code"] == 404
+
+
+def test_settings_api_updates_whitelisted_values(monkeypatch, client: TestClient) -> None:
+    """配置 API 应把白名单值交给动态配置模块。"""
+    captured = {}
+
+    def fake_update(settings: dict) -> dict:
+        """记录更新内容并返回脱敏公开状态。"""
+        captured.update(settings)
+        return {"values": {"SAFELINE_BASE_URL": settings["SAFELINE_BASE_URL"]}, "secret_configured": {}}
+
+    monkeypatch.setattr(app.config, "update_settings", fake_update)
+
+    response = client.put(
+        "/api/settings",
+        json={"settings": {"SAFELINE_BASE_URL": "https://waf.example.test"}},
+    )
+
+    assert response.status_code == 200
+    assert captured == {"SAFELINE_BASE_URL": "https://waf.example.test"}
+
+
+def test_auto_mode_requires_confirmation(monkeypatch, client: TestClient) -> None:
+    """开启自动托管时 API 必须要求二次确认。"""
+    called = []
+    monkeypatch.setattr(app.config, "update_settings", lambda value: called.append(value))
+
+    response = client.put("/api/auto-mode", json={"enabled": True})
+
+    assert response.status_code == 400
+    assert called == []
+
+
+def test_auto_mode_toggle_controls_manager(monkeypatch, client: TestClient) -> None:
+    """确认开启后应持久化开关并启动后台管理器。"""
+    updates = []
+    events = []
+
+    async def fake_start() -> dict:
+        """模拟启动任务。"""
+        events.append("start")
+        return {"enabled": True, "running": True}
+
+    monkeypatch.setattr(app.config, "update_settings", lambda value: updates.append(value))
+    monkeypatch.setattr(app.auto_mode_manager, "start", fake_start)
+
+    response = client.put("/api/auto-mode", json={"enabled": True, "confirm": True})
+
+    assert response.status_code == 200
+    assert updates == [{"AUTO_MODE_ENABLED": True}]
+    assert events == ["start"]

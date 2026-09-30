@@ -8,12 +8,7 @@ from typing import Any
 import requests
 import urllib3
 
-from config import (
-    BLACKLIST_GROUP,
-    SAFELINE_API_TOKEN,
-    SAFELINE_BASE_URL,
-    validate_safeline_config,
-)
+import config
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -26,16 +21,16 @@ NO_PROXY = {"http": "", "https": ""}
 
 def _headers() -> dict[str, str]:
     """构造雷池认证头。"""
-    if not SAFELINE_API_TOKEN:
+    if not config.SAFELINE_API_TOKEN:
         raise ValueError("缺少 SAFELINE_API_TOKEN，请检查 .env")
-    return {"X-SLCE-API-TOKEN": SAFELINE_API_TOKEN}
+    return {"X-SLCE-API-TOKEN": config.SAFELINE_API_TOKEN}
 
 
 def _endpoint(path: str) -> str:
     """拼接雷池 API 地址。"""
-    if not SAFELINE_BASE_URL:
+    if not config.SAFELINE_BASE_URL:
         raise ValueError("缺少 SAFELINE_BASE_URL，请检查 .env")
-    return f"{SAFELINE_BASE_URL}/{path.lstrip('/')}"
+    return f"{config.SAFELINE_BASE_URL}/{path.lstrip('/')}"
 
 
 def _check_payload(response: requests.Response) -> dict[str, Any]:
@@ -126,7 +121,7 @@ def fetch_attack_records(
     """
     if limit <= 0 or hours <= 0 or page <= 0:
         return []
-    validate_safeline_config()
+    config.validate_safeline_config()
     now = int(time.time())
     start = now - hours * 60 * 60
     if page_size is not None:
@@ -156,14 +151,14 @@ def get_or_create_blacklist_group() -> int:
     nodes = data.get("nodes", []) if isinstance(data, dict) else []
     if isinstance(nodes, list):
         for group in nodes:
-            if isinstance(group, dict) and group.get("comment") == BLACKLIST_GROUP:
+            if isinstance(group, dict) and group.get("comment") == config.BLACKLIST_GROUP:
                 group_id = group.get("id")
                 if isinstance(group_id, int):
                     return group_id
     created = _request_json(
         "POST",
         "/api/open/ipgroup",
-        json={"comment": BLACKLIST_GROUP, "ips": []},
+        json={"comment": config.BLACKLIST_GROUP, "ips": []},
     )
     group_id = created.get("data")
     if not isinstance(group_id, int):
@@ -184,7 +179,7 @@ def add_ip_to_blacklist(ip: str, group_id: int | None = None) -> bool:
         requests.RequestException: 网络请求失败。
         RuntimeError: 雷池返回错误。
     """
-    validate_safeline_config()
+    config.validate_safeline_config()
     normalized_ip = str(ipaddress.ip_address(ip))
     target_group_id = group_id or get_or_create_blacklist_group()
     _request_json(

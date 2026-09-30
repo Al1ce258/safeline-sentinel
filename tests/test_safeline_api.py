@@ -34,8 +34,8 @@ def test_fetch_attack_records_uses_seconds_and_token(monkeypatch) -> None:
             }
         )
 
-    monkeypatch.setattr(api, "SAFELINE_BASE_URL", "https://waf.example.test")
-    monkeypatch.setattr(api, "SAFELINE_API_TOKEN", "test-token")
+    monkeypatch.setattr(api.config, "SAFELINE_BASE_URL", "https://waf.example.test")
+    monkeypatch.setattr(api.config, "SAFELINE_API_TOKEN", "test-token")
     monkeypatch.setattr(api.requests, "request", fake_request)
 
     records = fetch_attack_records(limit=1)
@@ -72,8 +72,8 @@ def test_fetch_attack_records_falls_back_to_milliseconds(monkeypatch) -> None:
         calls.append(kwargs["params"])
         return next(responses)
 
-    monkeypatch.setattr(api, "SAFELINE_BASE_URL", "https://waf.example.test")
-    monkeypatch.setattr(api, "SAFELINE_API_TOKEN", "test-token")
+    monkeypatch.setattr(api.config, "SAFELINE_BASE_URL", "https://waf.example.test")
+    monkeypatch.setattr(api.config, "SAFELINE_API_TOKEN", "test-token")
     monkeypatch.setattr(api.requests, "request", fake_request)
 
     assert fetch_attack_records(limit=1) == [{"event_id": "one"}]
@@ -104,8 +104,8 @@ def test_add_ip_to_blacklist_uses_append_endpoint(monkeypatch) -> None:
         calls.append((method, url, kwargs))
         return next(responses)
 
-    monkeypatch.setattr(api, "SAFELINE_BASE_URL", "https://waf.example.test")
-    monkeypatch.setattr(api, "SAFELINE_API_TOKEN", "test-token")
+    monkeypatch.setattr(api.config, "SAFELINE_BASE_URL", "https://waf.example.test")
+    monkeypatch.setattr(api.config, "SAFELINE_API_TOKEN", "test-token")
     monkeypatch.setattr(api.requests, "request", fake_request)
 
     assert add_ip_to_blacklist("2001:db8::1") is True
@@ -119,8 +119,8 @@ def test_fetch_attack_records_rejects_error_payload(monkeypatch) -> None:
     """雷池 err 非空时应抛出 RuntimeError。"""
     import safeline_api as api
 
-    monkeypatch.setattr(api, "SAFELINE_BASE_URL", "https://waf.example.test")
-    monkeypatch.setattr(api, "SAFELINE_API_TOKEN", "test-token")
+    monkeypatch.setattr(api.config, "SAFELINE_BASE_URL", "https://waf.example.test")
+    monkeypatch.setattr(api.config, "SAFELINE_API_TOKEN", "test-token")
     monkeypatch.setattr(
         api.requests,
         "request",

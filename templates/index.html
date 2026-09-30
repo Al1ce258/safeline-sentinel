@@ -4,8 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>雷池哨兵控制台</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
     <script src="{{ url_for('static', path='app.js') }}" defer></script>
+    <script src="{{ url_for('static', path='settings.js') }}" defer></script>
 </head>
 <body>
     <header class="topbar">
@@ -37,6 +39,92 @@
 
     <main class="layout">
         <p id="global-status" class="status" role="status"></p>
+
+        <section class="panel wide" aria-labelledby="settings-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">01 / ENVIRONMENT</p>
+                    <h2 id="settings-title">运行配置</h2>
+                </div>
+                <button id="save-settings-button" class="button primary" type="submit" form="settings-form">保存配置</button>
+            </div>
+            <form id="settings-form" class="settings-grid">
+                <label class="field wide-field">
+                    <span>雷池 Base URL</span>
+                    <input id="safeline-base-url" name="SAFELINE_BASE_URL" type="url" required>
+                </label>
+                <label class="field">
+                    <span>雷池 API Token</span>
+                    <input id="safeline-api-token" name="SAFELINE_API_TOKEN" type="password" autocomplete="new-password">
+                    <small id="safeline-token-status" class="field-note"></small>
+                </label>
+                <label class="field">
+                    <span>大模型 API Key</span>
+                    <input id="llm-api-key" name="LLM_API_KEY" type="password" autocomplete="new-password">
+                    <small id="llm-key-status" class="field-note"></small>
+                </label>
+                <label class="field wide-field">
+                    <span>大模型 API URL</span>
+                    <input id="llm-api-url" name="LLM_API_URL" type="url" required>
+                </label>
+                <label class="field">
+                    <span>模型名</span>
+                    <input id="llm-model" name="LLM_MODEL" type="text" required>
+                </label>
+                <label class="field">
+                    <span>黑名单 IP 组</span>
+                    <input id="blacklist-group" name="BLACKLIST_GROUP" type="text" required>
+                </label>
+                <label class="field">
+                    <span>大模型代理</span>
+                    <input id="llm-proxy" name="LLM_PROXY" type="url" placeholder="可选">
+                </label>
+                <label class="field checkbox-field">
+                    <span>校验大模型 TLS</span>
+                    <input id="llm-verify-ssl" name="LLM_VERIFY_SSL" type="checkbox">
+                </label>
+                <label class="field">
+                    <span>扫描间隔（秒）</span>
+                    <input id="auto-scan-interval" name="AUTO_SCAN_INTERVAL_SECONDS" type="number" min="15" max="3600" required>
+                </label>
+                <label class="field">
+                    <span>回溯小时数</span>
+                    <input id="auto-lookback-hours" name="AUTO_LOOKBACK_HOURS" type="number" min="1" max="168" required>
+                </label>
+                <label class="field">
+                    <span>单轮最大记录数</span>
+                    <input id="auto-max-records" name="AUTO_MAX_RECORDS_PER_SCAN" type="number" min="1" max="500" required>
+                </label>
+                <label class="field">
+                    <span>单轮最大封禁数</span>
+                    <input id="auto-max-blocks" name="AUTO_MAX_BLOCKS_PER_SCAN" type="number" min="1" max="100" required>
+                </label>
+            </form>
+        </section>
+
+        <section class="panel wide" aria-labelledby="auto-mode-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">02 / AUTOMATION</p>
+                    <h2 id="auto-mode-title">全自动托管</h2>
+                </div>
+                <div class="automation-actions">
+                    <button id="run-auto-button" class="button primary" type="button">立即扫描</button>
+                    <label class="switch-control">
+                        <input id="auto-mode-toggle" type="checkbox">
+                        <span class="switch-track" aria-hidden="true"></span>
+                        <strong id="auto-mode-label">未开启</strong>
+                    </label>
+                </div>
+            </div>
+            <div id="auto-mode-summary" class="automation-summary">
+                <span>状态 <strong id="auto-running">停止</strong></span>
+                <span>最近扫描 <strong id="auto-last-run">-</strong></span>
+                <span>研判 <strong id="auto-analyzed">0</strong></span>
+                <span>封禁 <strong id="auto-blocked">0</strong></span>
+                <span>错误 <strong id="auto-errors">0</strong></span>
+            </div>
+        </section>
 
         <section class="panel wide" aria-labelledby="logs-title">
             <div class="section-heading">
